@@ -182,3 +182,5 @@ A lógica fica em `internal/ui`, que só fala com a interface `Backend` (`backen
 ## Licença
 
 O `mtrad` é software livre sob a GNU General Public License versão 3 (arquivo `LICENSE`): você pode usar, estudar, modificar e redistribuir, e quem distribuir uma versão modificada deve manter o código aberto sob a mesma licença. A licença vale para o programa, não para os pacotes de tradução que ele gera. O programa não distribui jars de mods nem modelos de tradução; cada um tem a licença do seu autor.
+
+Veja o texto completo da licença no arquivo [LICENSE](LICENSE).
