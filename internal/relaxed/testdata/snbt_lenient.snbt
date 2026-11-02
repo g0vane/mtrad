@@ -1,0 +1,36 @@
+# Arquivo de teste do mtrad (escrito para este projeto): SNBT frouxo, como o
+# que o jogo aceita. Tem vírgulas a mais e a menos, "=" no lugar de ":",
+# aspas simples e duplas, comentários com "#" e "//" e arrays tipados.
+
+
+    {
+
+	  test_string: "value"
+	 "test string key": 'value "2"'
+	numero = 1234
+	longo: 304993938434993L,
+	,,  ,,
+	,
+	flag: true,
+	decimal: 40402.4F
+
+	curto: 49S
+	// comentário
+	byte: -124B
+	intArray: [I;-94 49,29]
+	byteArray: [   B       ;     -94B,    49b   , 29B,,,]
+	longArray: [L;
+	  404049L
+	  -34348L ]
+	"outra chave": "linha\nnova\\barra",
+	lista: [
+    	  "a \"texto\" 1"
+    	  'b "texto" 2'
+    	  "c 'texto' 3"
+    	]
+    composto: {
+        s1: 5
+        s2: "olá!"
+        s3: -4.435345e-2d
+    }
+}

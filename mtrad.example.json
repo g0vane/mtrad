@@ -1,0 +1,42 @@
+{
+  "sources": ["lang", "patchouli", "ftbq"],
+  "protect_style": "brackets",
+  "glossary": {
+    "vanilla": true,
+    "tsv": []
+  },
+  "route": {
+    "default": "llm",
+    "rules": [
+      {"max_chars": 40, "max_tokens": 0, "engine": "llm"}
+    ]
+  },
+  "translate": {
+    "retries": 2,
+    "backoff_ms": 2000,
+    "engines": {
+      "llm": {
+        "type": "openai",
+        "base_url": "http://127.0.0.1:8080/v1",
+        "model": "translategemma-4b",
+        "prompt_mode": "chat",
+        "temperature": 0,
+        "max_tokens": 512,
+        "workers": 2,
+        "timeout_sec": 120
+      },
+      "ct2": {
+        "type": "worker",
+        "command": ["python3", "tools/ct2worker.py", "--backend", "ct2", "--model", "opus-en-pt", "--tokenizer", "Helsinki-NLP/opus-mt-tc-big-en-pt", "--text-prefix", ">>pob<< "],
+        "model": "opus-mt-tc-big-en-pt",
+        "batch": 16
+      },
+      "libre": {
+        "type": "libretranslate",
+        "base_url": "http://127.0.0.1:5000",
+        "target": "pt-BR",
+        "batch": 16
+      }
+    }
+  }
+}

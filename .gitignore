@@ -1,0 +1,18 @@
+# binários e saídas de compilação
+/dist/
+/mtrad
+/mtrad.exe
+# trabalho local: nada disso deve ir para o repositório
+/work*/
+/logs/
+/cache/
+*.jsonl
+*.done.json
+.lock
+# configuração pessoal (pode conter chave de API); o modelo é mtrad.example.json
+/mtrad.json
+/mtrad.json.bak
+*.bak
+*.tmp
+*.test
+*.tar.gz
