@@ -27,17 +27,19 @@ inside mods (`META-INF/jarjar`) are read too.
 
 You do not need Go: download the ready-made program from the
 [Releases](https://github.com/g0vane/mtrad/releases) page (use the latest version). Each
-release has five files and a `SHA256SUMS`. Pick yours:
+release has seven files and a `SHA256SUMS`. Pick yours:
 
 | Your system | Download |
 |---|---|
 | Linux (regular PC, Intel or AMD) | `mtrad-linux-amd64` |
 | Linux (ARM, such as Raspberry Pi 4/5) | `mtrad-linux-arm64` |
+| Linux (64-bit RISC-V) | `mtrad-linux-riscv64` |
 | macOS with an Intel chip | `mtrad-darwin-amd64` |
 | macOS with an Apple chip (M1, M2, M3...) | `mtrad-darwin-arm64` |
-| Windows 10 or 11 (64-bit) | `mtrad-windows-amd64.exe` |
+| Windows 10 or 11 (regular PC, Intel or AMD) | `mtrad-windows-amd64.exe` |
+| Windows 11 on ARM (Surface Pro X, Snapdragon Copilot+ PCs) | `mtrad-windows-arm64.exe` |
 
-To know which Linux you have: `uname -m` shows `x86_64` (amd64) or `aarch64` (arm64). On
+To know which Linux you have: `uname -m` shows `x86_64` (amd64), `aarch64` (arm64) or `riscv64`. On
 macOS, the Apple menu > "About This Mac" shows the chip.
 
 ### Linux and macOS
@@ -55,10 +57,10 @@ If the last command says "command not found", `~/.local/bin` is not in your `PAT
 
 ### Windows
 
-1. Create a folder, for example `C:\mtrad`, and put `mtrad-windows-amd64.exe` there, renamed
-   to `mtrad.exe`.
+1. Create a folder, for example `C:\mtrad`, and put the `.exe` you downloaded there
+   (`mtrad-windows-amd64.exe` or `mtrad-windows-arm64.exe`), renamed to `mtrad.exe`.
 2. To check the file, in PowerShell: `Get-FileHash .\mtrad.exe -Algorithm SHA256` and compare
-   it with the `mtrad-windows-amd64.exe` line in `SHA256SUMS` (the hash must be equal).
+   it with the line of the file you downloaded in `SHA256SUMS` (the hash must be equal).
 3. To use it from any folder, add `C:\mtrad` to the `PATH`: Start > "Edit the system
    environment variables" > Environment Variables > the user's `Path` > New.
 4. Open a new PowerShell and run `mtrad --version`.
@@ -181,9 +183,11 @@ i18n), but no translated file was loaded by Patchouli or FTB Quests for real. Re
 and GPU runs, the game opening the pack, and Windows (the build compiles, but the menu's key
 reading needs `stty`) are also untested.
 
-About the releases: the `release.yml` workflow only runs on GitHub and has not been run yet.
-The macOS and Windows binaries were compiled, but never opened on a real macOS or Windows,
-and the SmartScreen and Gatekeeper warnings described in "Installation" were not seen here.
+About the releases: the `release.yml` workflow ran on GitHub for v0.9.0 and its three jobs
+passed; the Linux amd64 binary was downloaded from the release and checked. The other
+binaries (macOS, Windows, Linux arm64, and the newer Linux riscv64 and Windows arm64) were
+compiled but never run on a real machine, and the SmartScreen and Gatekeeper warnings
+described in "Installation" were not seen here.
 
 ## Checking the pack: `mtrad verify`
 
@@ -257,7 +261,7 @@ keep the source folder to run the binary: put it anywhere (for example a folder 
 `PATH`). Configuration is read from `./mtrad.json`, otherwise `~/.config/mtrad/mtrad.json`.
 
     ./build.sh          # this machine only  -> dist/mtrad
-    ./build.sh all      # Linux (amd64, arm64), macOS (amd64, arm64) and Windows (amd64) + dist/SHA256SUMS
+    ./build.sh all      # Linux (amd64, arm64, riscv64), macOS (amd64, arm64) and Windows (amd64, arm64) + dist/SHA256SUMS
     VERSION=0.10 ./build.sh
 
 `mtrad --version` (or `-V`) shows version, commit (if built in a git repository), Go version
@@ -267,7 +271,7 @@ and system. The version comes from `-X main.toolVersion=...` in `build.sh`.
 
 The workflow `.github/workflows/release.yml` runs when a `vX.Y.Z` tag is pushed: it runs
 gofmt, vet and `go test -race`, builds with `VERSION=X.Y.Z` (the tag without the `v`), checks
-that `dist/` has exactly the 5 binaries and `SHA256SUMS` and that `mtrad --version` shows the
+that `dist/` has exactly the 7 binaries and `SHA256SUMS` and that `mtrad --version` shows the
 version, and creates the Release with those 6 files. The notes come from the commits since the
 previous tag (no merges) and the fixed text at the end is in `.github/release-footer.md`. Only
 the job that publishes has `contents: write`; the actions are pinned by commit SHA.

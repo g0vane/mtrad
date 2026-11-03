@@ -8,9 +8,11 @@ Baixe **um** dos arquivos abaixo, o que combina com o seu sistema, e também o `
 |---|---|
 | Linux (PC comum, Intel ou AMD) | `mtrad-linux-amd64` |
 | Linux (ARM, como Raspberry Pi 4/5) | `mtrad-linux-arm64` |
+| Linux (RISC-V de 64 bits) | `mtrad-linux-riscv64` |
 | macOS com chip Intel | `mtrad-darwin-amd64` |
 | macOS com chip Apple (M1, M2, M3...) | `mtrad-darwin-arm64` |
-| Windows 10 ou 11 (64 bits) | `mtrad-windows-amd64.exe` |
+| Windows 10 ou 11 (PC comum, Intel ou AMD) | `mtrad-windows-amd64.exe` |
+| Windows 11 em ARM (Surface Pro X, Copilot+ PC com Snapdragon) | `mtrad-windows-arm64.exe` |
 
 ### Conferir o arquivo (recomendado)
 

@@ -10,7 +10,7 @@ export CGO_ENABLED=0
 FLAGS=(-trimpath -ldflags "-s -w -X 'main.toolVersion=${VERSION}'")
 mkdir -p dist
 if [ "${1:-}" = "all" ]; then
-  for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+  for t in linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
     os=${t%/*}; arch=${t#*/}; ext=""; [ "$os" = windows ] && ext=".exe"
     GOOS=$os GOARCH=$arch go build "${FLAGS[@]}" -o "dist/mtrad-$os-$arch$ext" ./cmd/mtrad
     echo "ok dist/mtrad-$os-$arch$ext"
