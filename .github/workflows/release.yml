@@ -45,7 +45,7 @@ jobs:
       - name: Conferir os arquivos e a versão
         run: |
           set -euo pipefail
-          esperados="SHA256SUMS mtrad-darwin-amd64 mtrad-darwin-arm64 mtrad-linux-amd64 mtrad-linux-arm64 mtrad-windows-amd64.exe"
+          esperados="SHA256SUMS mtrad-darwin-amd64 mtrad-darwin-arm64 mtrad-linux-amd64 mtrad-linux-arm64 mtrad-linux-riscv64 mtrad-windows-amd64.exe mtrad-windows-arm64.exe"
           achados="$(ls dist | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
           if [ "$achados" != "$esperados" ]; then
             echo "arquivos em dist/ diferentes do esperado" >&2
@@ -116,7 +116,9 @@ jobs:
             --notes-file notas.md \
             dist/mtrad-linux-amd64 \
             dist/mtrad-linux-arm64 \
+            dist/mtrad-linux-riscv64 \
             dist/mtrad-darwin-amd64 \
             dist/mtrad-darwin-arm64 \
             dist/mtrad-windows-amd64.exe \
+            dist/mtrad-windows-arm64.exe \
             dist/SHA256SUMS

@@ -22,17 +22,19 @@ de mods (`META-INF/jarjar`) também são lidos.
 
 Não precisa instalar o Go: baixe o programa pronto na página de
 [Releases](https://github.com/g0vane/mtrad/releases) (use a versão mais recente).
-Cada release traz cinco arquivos e o `SHA256SUMS`. Escolha o seu:
+Cada release traz sete arquivos e o `SHA256SUMS`. Escolha o seu:
 
 | Seu sistema | Baixe |
 |---|---|
 | Linux (PC comum, Intel ou AMD) | `mtrad-linux-amd64` |
 | Linux (ARM, como Raspberry Pi 4/5) | `mtrad-linux-arm64` |
+| Linux (RISC-V de 64 bits) | `mtrad-linux-riscv64` |
 | macOS com chip Intel | `mtrad-darwin-amd64` |
 | macOS com chip Apple (M1, M2, M3...) | `mtrad-darwin-arm64` |
-| Windows 10 ou 11 (64 bits) | `mtrad-windows-amd64.exe` |
+| Windows 10 ou 11 (PC comum, Intel ou AMD) | `mtrad-windows-amd64.exe` |
+| Windows 11 em ARM (Surface Pro X, Copilot+ PC com Snapdragon) | `mtrad-windows-arm64.exe` |
 
-Para saber qual é o seu Linux: `uname -m` mostra `x86_64` (amd64) ou `aarch64` (arm64).
+Para saber qual é o seu Linux: `uname -m` mostra `x86_64` (amd64), `aarch64` (arm64) ou `riscv64`.
 No macOS, o menu da maçã > "Sobre este Mac" mostra o chip.
 
 ### Linux e macOS
@@ -50,11 +52,11 @@ linha `export PATH="$HOME/.local/bin:$PATH"` e abra um terminal novo.
 
 ### Windows
 
-1. Crie uma pasta, por exemplo `C:\mtrad`, e coloque ali o `mtrad-windows-amd64.exe`
-   renomeado para `mtrad.exe`.
+1. Crie uma pasta, por exemplo `C:\mtrad`, e coloque ali o `.exe` que você baixou
+   (`mtrad-windows-amd64.exe` ou `mtrad-windows-arm64.exe`), renomeado para `mtrad.exe`.
 2. Para conferir o arquivo, no PowerShell:
    `Get-FileHash .\mtrad.exe -Algorithm SHA256` e compare com a linha do
-   `mtrad-windows-amd64.exe` no `SHA256SUMS` (o hash deve ser igual).
+   arquivo que você baixou no `SHA256SUMS` (o hash deve ser igual).
 3. Para usar de qualquer pasta, acrescente `C:\mtrad` ao `PATH`: Iniciar > "Editar as
    variáveis de ambiente do sistema" > Variáveis de Ambiente > `Path` do usuário > Novo.
 4. Abra um PowerShell novo e rode `mtrad --version`.
@@ -177,10 +179,11 @@ pelo FTB Quests de verdade. As partes sem confirmação (formato exato do SNBT q
 Quests lê, marcas `&a` e `{image:...}`, layout de `assets/` e `libraries/` do Prism, nome
 do jar do cliente) estão listadas na seção 24 do documento.
 
-Sobre as releases: o workflow `release.yml` só roda no GitHub e ainda não foi executado.
-Os binários de macOS e de Windows foram compilados, mas nunca abertos num macOS ou num
-Windows de verdade, e os avisos de SmartScreen e Gatekeeper descritos em "Instalação" não
-foram vistos aqui.
+Sobre as releases: o workflow `release.yml` rodou no GitHub na v0.9.0 e os três jobs
+passaram; o binário Linux amd64 foi baixado da release e conferido. Os outros binários
+(macOS, Windows, Linux arm64 e os mais novos Linux riscv64 e Windows arm64) foram
+compilados, mas nunca executados numa máquina de verdade, e os avisos de SmartScreen e
+Gatekeeper descritos em "Instalação" não foram vistos aqui.
 
 ## Conferir o pacote: `mtrad verify`
 
@@ -219,7 +222,7 @@ O cache fica em `work/cache/cache.jsonl`, junto do resto do trabalho, e some só
 O `mtrad` compila num arquivo estático (`CGO_ENABLED=0`), sem bibliotecas nem arquivos ao lado: o script do motor `ct2` (`ct2worker.py`) vai dentro do binário e o `mtrad init --engine ct2` o grava em `tools/` se ainda não existir.
 
     ./build.sh          # só esta máquina  -> dist/mtrad
-    ./build.sh all      # Linux (amd64, arm64), macOS (amd64, arm64) e Windows (amd64) + dist/SHA256SUMS
+    ./build.sh all      # Linux (amd64, arm64, riscv64), macOS (amd64, arm64) e Windows (amd64, arm64) + dist/SHA256SUMS
     VERSION=0.10 ./build.sh
 
 `mtrad --version` (ou `-V`) mostra versão, commit (se compilado num repositório git), versão do Go e sistema. A versão vem do `-X main.toolVersion=...` do `build.sh`.
@@ -228,7 +231,7 @@ O `mtrad` compila num arquivo estático (`CGO_ENABLED=0`), sem bibliotecas nem a
 
 O workflow `.github/workflows/release.yml` dispara quando se envia uma tag `vX.Y.Z`: roda
 gofmt, vet e `go test -race`, compila com `VERSION=X.Y.Z` (a tag sem o `v`), confere que
-`dist/` tem exatamente os 5 binários e o `SHA256SUMS` e que `mtrad --version` mostra a
+`dist/` tem exatamente os 7 binários e o `SHA256SUMS` e que `mtrad --version` mostra a
 versão, e cria a Release com esses 6 arquivos. As notas vêm dos commits desde a tag
 anterior (sem merges) e o texto fixo do fim está em `.github/release-footer.md`.
 Só o job que publica tem `contents: write`; as actions estão fixadas pelo SHA do commit.
