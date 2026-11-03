@@ -666,7 +666,19 @@ func (u *UI) translate() {
 	u.runTranslate(limit, j == 1)
 }
 
+// runTranslate roda a tradução. Se o usuário pausar com Esc, oferece logo
+// "Continuar de onde parou" (a mesma execução, sem passar de novo pelos menus de
+// Traduzir); o que já foi traduzido está guardado, então continuar só pede o que falta.
 func (u *UI) runTranslate(limit int, install bool) {
+	for !u.quit {
+		if !u.translateOnce(limit, install) {
+			return
+		}
+	}
+}
+
+// translateOnce faz uma rodada e diz se o usuário escolheu continuar depois de pausar.
+func (u *UI) translateOnce(limit int, install bool) (resume bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var done, total int64
@@ -702,7 +714,14 @@ loop:
 	lines := u.progressFrame(d, t, time.Since(start), false, true)
 	switch {
 	case paused:
-		lines = append(lines, "", "  "+u.warn("!")+" pausado. O que já foi traduzido está guardado; Traduzir de novo retoma.")
+		lines = append(lines, "", "  "+u.warn("!")+" pausado. O que já foi traduzido está guardado.")
+		for _, l := range res.out.Lines {
+			lines = append(lines, "  "+u.dim(l))
+		}
+		i, ok := u.pick(Pick{Build: func() Layout {
+			return Layout{Head: lines, Items: []Item{{Label: "Continuar de onde parou", Hint: "só pede o que falta"}, {Label: "Voltar ao menu"}}}
+		}})
+		return ok && i == 0
 	case res.err != nil:
 		lines = append(lines, "", "  "+u.bad("✗")+" parou: "+res.err.Error(), "  "+u.dim("O que já foi traduzido está guardado; confira o ambiente em Manutenção e tente de novo."))
 	case res.out.Partial:
@@ -720,6 +739,7 @@ loop:
 	if ev := u.in.Next(); ev.K == KCtrlC || ev.K == KEOF {
 		u.quit = true
 	}
+	return false
 }
 
 // attention é a linha de aviso do fim de uma execução que terminou com itens

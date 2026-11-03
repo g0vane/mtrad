@@ -76,10 +76,32 @@ func TestInstanceFlowModsAndTranslate(t *testing.T) {
 }
 
 func TestTranslatePause(t *testing.T) {
-	sc := keys("enter enter enter enter enter enter ctrlc")
+	// 5 Enters chegam a "Começar agora"; o Esc do Poll pausa; Ctrl+C sai do menu de pausa
+	sc := keys("enter enter enter enter enter ctrlc")
 	sc.PollKeys = Script("esc")
 	out := runDemo(t, &Demo{Done: true, Delay: 20 * time.Millisecond}, sc, 30, 100)
-	want(t, out, "Traduzindo…", "pausado")
+	want(t, out, "Traduzindo…", "pausado", "Continuar de onde parou")
+}
+
+// Depois de pausar, "Continuar de onde parou" volta a traduzir na hora, sem
+// passar de novo pelos menus de Traduzir.
+func TestTranslatePauseThenResume(t *testing.T) {
+	// 5 Enters começam; o 6º é "Continuar de onde parou"; o 7º fecha a tela de fim
+	sc := keys("enter enter enter enter enter enter enter ctrlc")
+	sc.PollKeys = Script("esc")
+	out := runDemo(t, &Demo{Done: true, Delay: 20 * time.Millisecond}, sc, 30, 100)
+	want(t, out, "pausado", "Continuar de onde parou", "etapa concluída")
+}
+
+// "Voltar ao menu" depois de pausar não recomeça a tradução.
+func TestTranslatePauseThenBack(t *testing.T) {
+	sc := keys("enter enter enter enter enter down enter ctrlc")
+	sc.PollKeys = Script("esc")
+	out := runDemo(t, &Demo{Done: true, Delay: 20 * time.Millisecond}, sc, 30, 100)
+	want(t, out, "pausado", "Voltar ao menu")
+	if strings.Contains(out, "etapa concluída") {
+		t.Fatal("não devia ter recomeçado a tradução")
+	}
 }
 
 func TestFailedEditWarnsAboutMissingMarks(t *testing.T) {
