@@ -388,7 +388,7 @@ stateDiagram-v2
     Concluido --> [*]
 ```
 
-- **Pausar**: cancela o pedido atual e espera o lote em andamento (alguns segundos). Tudo o que terminou já está gravado; rodar de novo retoma.
+- **Pausar**: cancela o pedido atual e espera o lote em andamento (alguns segundos). Tudo o que terminou já está gravado. Ao pausar, a tela oferece "Continuar de onde parou" (volta a traduzir na hora, com os mesmos parâmetros, sem passar de novo pelos menus de Traduzir) ou "Voltar ao menu"; rodar Traduzir de novo mais tarde também retoma.
 - **Erro**: mostra a causa em uma frase e o caminho do registro (`work/logs/run-*.log`). Exemplos: "o Ollama parou de responder", "sem espaço em disco".
 - Se a tradução termina com reprovados, a tela diz quantos e sugere a tela Reprovados.
 - Mostrar o uso de memória do Ollama (a RAM cresce com o tempo) **(proposto)**; se passar de ~12 GiB, avisar e oferecer pausar.
