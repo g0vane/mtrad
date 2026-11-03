@@ -1,272 +1,346 @@
 # mtrad
 
-Traduz os textos de mods do Minecraft (Fabric, e em teste Forge e NeoForge) para
-português do Brasil, em etapas separadas que conversam só por arquivos. Veja o documento
-de pesquisa, seções 19 a 26, para a teoria e para o que foi testado.
+**English** | **[Português (Brasil)](README.pt-BR.md)**
 
-Versão: **beta**. Fontes de texto: arquivos de idioma dos mods (`en_us.json`), livros do
-Patchouli (JSON) e missões do FTB Quests (todas as versões: 1.20.1 e antes com o texto
-dentro dos capítulos, 1.21 em diante com arquivos de idioma).
+Translates the texts of Minecraft mods (Fabric, and in testing Forge and NeoForge) into
+Brazilian Portuguese, in separate stages that talk to each other only through files. It runs
+locally and is free: the default engine is a local model served by Ollama
+(`translategemma:4b`), and no account or API key is needed.
 
-Textos próprios de modpacks em `kubejs/assets/<ns>/lang/en_us.json` (por exemplo as
-missões exportadas pelo FTB Quest Localizer, em `kubejs/assets/ftbquestlocalizer/lang`)
-também são lidos; a pasta `FTBLang/` (cópias de segurança do Localizer) não.
+Status: **beta**. Text sources: the mods' language files (`en_us.json`), Patchouli books
+(JSON) and FTB Quests (all versions: 1.20.1 and older keep the text inside the chapters,
+1.21 and newer use language files).
 
-Forge e NeoForge (em teste, só com instâncias de mentira): o nome do mod vem de
-`META-INF/mods.toml` ou `neoforge.mods.toml` (ou `mcmod.info`, até 1.12) e os mods dentro
-de mods (`META-INF/jarjar`) também são lidos.
+> **Note on language.** The tool translates *into* pt-BR, and its own messages, menu and
+> reports are in Portuguese. This README is a translation of `README.pt-BR.md`; the
+> Portuguese file is the reference if the two differ.
 
-## Instalação
+Modpack texts in `kubejs/assets/<ns>/lang/en_us.json` (for example quests exported by the
+FTB Quest Localizer, in `kubejs/assets/ftbquestlocalizer/lang`) are also read; the `FTBLang/`
+folder (the Localizer's backups) is not.
 
-Não precisa instalar o Go: baixe o programa pronto na página de
-[Releases](https://github.com/g0vane/mtrad/releases) (use a versão mais recente).
-Cada release traz cinco arquivos e o `SHA256SUMS`. Escolha o seu:
+Forge and NeoForge (in testing, only with hand-made instances): the mod name comes from
+`META-INF/mods.toml` or `neoforge.mods.toml` (or `mcmod.info`, up to 1.12), and mods nested
+inside mods (`META-INF/jarjar`) are read too.
 
-| Seu sistema | Baixe |
+## Installation
+
+You do not need Go: download the ready-made program from the
+[Releases](https://github.com/g0vane/mtrad/releases) page (use the latest version). Each
+release has five files and a `SHA256SUMS`. Pick yours:
+
+| Your system | Download |
 |---|---|
-| Linux (PC comum, Intel ou AMD) | `mtrad-linux-amd64` |
-| Linux (ARM, como Raspberry Pi 4/5) | `mtrad-linux-arm64` |
-| macOS com chip Intel | `mtrad-darwin-amd64` |
-| macOS com chip Apple (M1, M2, M3...) | `mtrad-darwin-arm64` |
-| Windows 10 ou 11 (64 bits) | `mtrad-windows-amd64.exe` |
+| Linux (regular PC, Intel or AMD) | `mtrad-linux-amd64` |
+| Linux (ARM, such as Raspberry Pi 4/5) | `mtrad-linux-arm64` |
+| macOS with an Intel chip | `mtrad-darwin-amd64` |
+| macOS with an Apple chip (M1, M2, M3...) | `mtrad-darwin-arm64` |
+| Windows 10 or 11 (64-bit) | `mtrad-windows-amd64.exe` |
 
-Para saber qual é o seu Linux: `uname -m` mostra `x86_64` (amd64) ou `aarch64` (arm64).
-No macOS, o menu da maçã > "Sobre este Mac" mostra o chip.
+To know which Linux you have: `uname -m` shows `x86_64` (amd64) or `aarch64` (arm64). On
+macOS, the Apple menu > "About This Mac" shows the chip.
 
-### Linux e macOS
+### Linux and macOS
 
     cd ~/Downloads
-    sha256sum -c SHA256SUMS --ignore-missing     # no macOS: shasum -a 256 -c SHA256SUMS --ignore-missing
-    chmod +x mtrad-linux-amd64                   # troque pelo nome que você baixou
+    sha256sum -c SHA256SUMS --ignore-missing     # on macOS: shasum -a 256 -c SHA256SUMS --ignore-missing
+    chmod +x mtrad-linux-amd64                   # use the name you downloaded
     mkdir -p ~/.local/bin
     mv mtrad-linux-amd64 ~/.local/bin/mtrad
     mtrad --version
 
-Se o último comando disser "command not found", `~/.local/bin` não está no seu `PATH`.
-Veja com `echo $PATH` e, se faltar, acrescente ao `~/.bashrc` (ou `~/.zshrc` no macOS) a
-linha `export PATH="$HOME/.local/bin:$PATH"` e abra um terminal novo.
+If the last command says "command not found", `~/.local/bin` is not in your `PATH`. Check with
+`echo $PATH` and, if it is missing, add the line `export PATH="$HOME/.local/bin:$PATH"` to
+`~/.bashrc` (or `~/.zshrc` on macOS) and open a new terminal.
 
 ### Windows
 
-1. Crie uma pasta, por exemplo `C:\mtrad`, e coloque ali o `mtrad-windows-amd64.exe`
-   renomeado para `mtrad.exe`.
-2. Para conferir o arquivo, no PowerShell:
-   `Get-FileHash .\mtrad.exe -Algorithm SHA256` e compare com a linha do
-   `mtrad-windows-amd64.exe` no `SHA256SUMS` (o hash deve ser igual).
-3. Para usar de qualquer pasta, acrescente `C:\mtrad` ao `PATH`: Iniciar > "Editar as
-   variáveis de ambiente do sistema" > Variáveis de Ambiente > `Path` do usuário > Novo.
-4. Abra um PowerShell novo e rode `mtrad --version`.
+1. Create a folder, for example `C:\mtrad`, and put `mtrad-windows-amd64.exe` there, renamed
+   to `mtrad.exe`.
+2. To check the file, in PowerShell: `Get-FileHash .\mtrad.exe -Algorithm SHA256` and compare
+   it with the `mtrad-windows-amd64.exe` line in `SHA256SUMS` (the hash must be equal).
+3. To use it from any folder, add `C:\mtrad` to the `PATH`: Start > "Edit the system
+   environment variables" > Environment Variables > the user's `Path` > New.
+4. Open a new PowerShell and run `mtrad --version`.
 
-O menu (`mtrad ui`) lê as teclas com o comando `stty` e por isso só funciona no Linux e no
-macOS; no Windows use os comandos (`mtrad run ...`).
+The menu (`mtrad ui`) reads keys with the `stty` command, so it only works on Linux and
+macOS; on Windows use the commands (`mtrad run ...`).
 
-### Os binários não são assinados
+### The binaries are not signed
 
-Os programas das releases não têm assinatura digital (isso custa dinheiro e o projeto é
-gratuito). Por isso o sistema pode avisar na primeira vez. O programa é o mesmo que sai do
-código-fonte aberto deste repositório; se preferir, compile você mesmo (próxima seção).
+The programs in the releases have no digital signature (that costs money and the project is
+free). So the system may warn you the first time. The program is the same one built from the
+open source code in this repository; if you prefer, build it yourself (next section).
 
-- **Windows (SmartScreen):** aparece "O Windows protegeu o computador". Clique em
-  "Mais informações" e depois em "Executar assim mesmo". Rodando pelo PowerShell, o aviso
-  costuma não aparecer. Se o arquivo vier marcado como baixado da internet, o PowerShell
-  libera com `Unblock-File .\mtrad.exe`.
-- **macOS (Gatekeeper):** aparece "não pode ser aberto porque não foi possível verificar
-  o desenvolvedor" ou o terminal responde `killed`. Tire a marca de quarentena do
-  arquivo: `xattr -d com.apple.quarantine ~/.local/bin/mtrad`. Outro jeito: tente abrir
-  uma vez, depois vá em Ajustes do Sistema > Privacidade e Segurança e clique em
-  "Abrir mesmo assim".
-- **Linux:** não há bloqueio; só falta a permissão de execução (`chmod +x`).
+- **Windows (SmartScreen):** "Windows protected your PC" appears. Click "More info" and then
+  "Run anyway". Running from PowerShell usually shows no warning. If the file is marked as
+  downloaded from the internet, PowerShell clears it with `Unblock-File .\mtrad.exe`.
+- **macOS (Gatekeeper):** "cannot be opened because the developer cannot be verified" appears,
+  or the terminal answers `killed`. Remove the quarantine mark from the file:
+  `xattr -d com.apple.quarantine ~/.local/bin/mtrad`. Another way: try to open it once, then
+  go to System Settings > Privacy & Security and click "Open Anyway".
+- **Linux:** there is no block; only the execute permission is missing (`chmod +x`).
 
-Estas instruções de contorno vêm da documentação dos próprios sistemas. Nenhuma foi testada
-aqui em Windows ou macOS de verdade (ver "O que NÃO foi testado").
+These workarounds come from the systems' own documentation. None was tested here on a real
+Windows or macOS (see "What was NOT tested").
 
-## Compilar
+## Build
 
-    go build -o mtrad ./cmd/mtrad        # só biblioteca padrão do Go (1.24 ou mais)
+    go build -o mtrad ./cmd/mtrad        # Go standard library only (Go 1.24 or newer)
     go test ./...
 
-## Começo rápido
+## Quick start
 
-    mtrad init -i ~/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/MINHA --engine llama
-    mtrad doctor -c mtrad.json                                  # o que falta no ambiente
-    mtrad run -i PASTA_DA_INSTANCIA -c mtrad.json --limit 50    # teste pequeno
-    mtrad run -i PASTA_DA_INSTANCIA -c mtrad.json --install     # tudo, e copia o FTB Quests
+    mtrad init -i ~/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/MINE --engine llama
+    mtrad doctor -c mtrad.json                                  # what is missing in the environment
+    mtrad run -i INSTANCE_FOLDER -c mtrad.json --limit 50       # small test
+    mtrad run -i INSTANCE_FOLDER -c mtrad.json --install        # everything, and copy FTB Quests
 
-`init` aceita `--engine llama|ollama|gemini|libre|ct2` (ollama e gemini pedem `--model`).
-Para testar sem motor: configure um motor `{"type":"echo"}` (devolve o texto com "[pt] "
-na frente).
+`init` accepts `--engine llama|ollama|gemini|libre|ct2` (ollama and gemini need `--model`).
+To test without an engine, configure an engine `{"type":"echo"}` (it returns the text with
+"[pt] " in front).
 
-## Etapas, uma a uma
+Running `mtrad` with no arguments in a terminal opens a keyboard-driven menu (see
+[Terminal interface](#terminal-interface-mtrad-ui)).
 
-    mtrad version -i PASTA_DA_INSTANCIA -w work
+## Stages, one by one
+
+    mtrad version -i INSTANCE_FOLDER -w work
     mtrad scan -w work
-    mtrad extract -w work        # arquivos de idioma
-    mtrad patchouli -w work      # livros do Patchouli
-    mtrad ftbq -w work           # missões do FTB Quests
-    mtrad diff -w work           # junta todas as fontes
-    mtrad glossary --vanilla -w work [--tsv meu.tsv]
+    mtrad extract -w work        # language files
+    mtrad patchouli -w work      # Patchouli books
+    mtrad ftbq -w work           # FTB Quests
+    mtrad diff -w work           # merges all sources
+    mtrad glossary --vanilla -w work [--tsv mine.tsv]
     mtrad protect -w work
     mtrad route -c mtrad.json -w work
-    mtrad translate -c mtrad.json -w work        # pode parar (Ctrl+C) e rodar de novo
-    mtrad validate -w work                       # veja work/report.md
+    mtrad translate -c mtrad.json -w work        # can be stopped (Ctrl+C) and run again
+    mtrad validate -w work                       # see work/report.md
     mtrad pack -w work           # resourcepacks/mtrad-pt_br.zip + work/out/ftbquests/
-    mtrad install -w work        # copia o FTB Quests para a pasta do jogo
-    mtrad verify -w work         # confere o pacote montado contra os originais
-    mtrad activate -w work       # liga o pacote e o idioma pt_br no options.txt (jogo fechado)
+    mtrad install -w work        # copies FTB Quests to the game folder
+    mtrad verify -w work         # checks the built pack against the originals
+    mtrad activate -w work       # turns on the pack and pt_br language in options.txt (game closed)
 
-Escolha as fontes com `"sources": ["lang", "patchouli", "ftbq"]` no arquivo de
-configuração (vazio = todas). Uma fonte desligada tem os arquivos antigos apagados do
-`work/` na execução seguinte do `run`.
+Choose the sources with `"sources": ["lang", "patchouli", "ftbq"]` in the configuration file
+(empty = all). A source that is turned off has its old files deleted from `work/` on the
+next `run`.
 
-Para traduzir só alguns mods (modpacks grandes), use no arquivo de configuração
-`"only_mods": ["kubejs", "ftbquests"]` (só esses) ou `"skip_mods": ["chipped"]` (todos menos
-esses), pelo id do mod; `kubejs` são os textos de `kubejs/assets`. O que já tem tradução
-continua sendo reaproveitado, e o que fica de fora continua em inglês. O cache guarda o
-que já foi traduzido: aumente a lista aos poucos e rode de novo.
+To translate only some mods (large modpacks), use in the configuration file
+`"only_mods": ["kubejs", "ftbquests"]` (only these) or `"skip_mods": ["chipped"]` (all but
+these), by mod id; `kubejs` means the texts in `kubejs/assets`. What is already translated is
+still reused, and what is left out stays in English. The cache keeps what was translated:
+grow the list little by little and run again.
 
-## Onde cada coisa vai
+## Where things go
 
-- Nada é escrito nos .jar.
-- `resourcepacks/mtrad-pt_br.zip` na instância: textos de idioma e livros do Patchouli
-  (`assets/<ns>/patchouli_books/<livro>/pt_br/...`). Ative o pacote no menu do jogo
-  (Opções, Pacotes de recursos) e escolha o idioma Português (Brasil).
-- FTB Quests não é recurso do jogo: o `pack` deixa os arquivos em `work/out/ftbquests/` e
-  o `install` copia para a instância. O `install` nunca sobrescreve um arquivo diferente
-  sem `--overwrite` (e então guarda o antigo em `.bak`); `--dry-run` só mostra o que faria.
-  - 1.21 em diante: o arquivo vai para `config/ftbquests/quests/lang/`.
-  - 1.20.1 e antes (texto dentro dos capítulos): o `install` **reescreve os capítulos**
-    (`config/ftbquests/quests/chapters/*.snbt`), trocando cada texto por `{chave}`; as
-    chaves e os textos (inglês e português) ficam em `assets/mtrad_ftbq/lang/` do
-    resource pack. O pacote precisa continuar ligado, senão as missões mostram o nome da
-    chave. Linhas em JSON de texto rico (`{"text":...}`) não são traduzidas.
-- Livros do Patchouli com `"i18n": true` (Botania, Hex Casting) guardam o texto no arquivo
-  de idioma; o `patchouli` pula esses livros e o `extract` já cobre o texto.
+- Nothing is written into the .jar files.
+- `resourcepacks/mtrad-pt_br.zip` in the instance: language texts and Patchouli books
+  (`assets/<ns>/patchouli_books/<book>/pt_br/...`). Turn the pack on in the game menu
+  (Options, Resource Packs) and choose the language Português (Brasil).
+- FTB Quests is not a game resource: `pack` leaves the files in `work/out/ftbquests/` and
+  `install` copies them to the instance. `install` never overwrites a different file without
+  `--overwrite` (and then keeps the old one as `.bak`); `--dry-run` only shows what it would do.
+  - 1.21 and newer: the file goes to `config/ftbquests/quests/lang/`.
+  - 1.20.1 and older (text inside the chapters): `install` **rewrites the chapters**
+    (`config/ftbquests/quests/chapters/*.snbt`), replacing each text with `{key}`; the keys
+    and the texts (English and Portuguese) go in `assets/mtrad_ftbq/lang/` of the resource
+    pack. The pack must stay on, otherwise quests show the key name. Lines in rich-text JSON
+    (`{"text":...}`) are not translated.
+- Patchouli books with `"i18n": true` (Botania, Hex Casting) keep their text in the language
+  file; `patchouli` skips those books and `extract` already covers the text.
 
-## Medir um motor
+## Measuring an engine
 
     mtrad evalset -w work -o evalwork -n 500
     mtrad protect -w evalwork && mtrad route -c mtrad.json -w evalwork
     mtrad translate -c mtrad.json -w evalwork && mtrad validate -w evalwork
     python3 tools/eval.py evalwork
 
-## Pastas
+## Folders
 
-- `internal/schema`: tipos e leitura/gravação dos arquivos (único ponto em comum)
-- `internal/{version,scan,extract,patchouli,ftbq,diff,glossary,vanilla,protect,route,translate,validate,pack,install,doctor,evalset}`: um módulo por pasta
-- `internal/{jsonx,jarx,relaxed}`: bibliotecas de apoio (JSON tolerante, leitura de jars, JSON5/SNBT)
-- `tools/ct2worker.py`: tradutor neural em CPU (CTranslate2), processo filho do `translate`
-- `tools/eval.py`: pontuação (sacreBLEU se instalado)
-- `cmd/prescript`: o pré-script de teste da extração
+- `internal/schema`: types and reading/writing of the files (the only thing in common)
+- `internal/{version,scan,extract,patchouli,ftbq,diff,glossary,vanilla,protect,route,translate,validate,pack,install,doctor,evalset}`: one module per folder
+- `internal/{jsonx,jarx,relaxed}`: support libraries (tolerant JSON, jar reading, JSON5/SNBT)
+- `tools/ct2worker.py`: neural translator on CPU (CTranslate2), a child process of `translate`
+- `tools/eval.py`: scoring (sacreBLEU if installed)
+- `cmd/prescript`: the extraction test pre-script
 
-## Códigos de saída
+## Exit codes
 
-0 ok, 1 erro, 2 uso errado, 3 terminou com itens falhos ou arquivos que o `install` não
-sobrescreveu.
+0 ok, 1 error, 2 wrong usage, 3 finished with failed items or files that `install` did not
+overwrite.
 
-## O que NÃO foi testado
+## What was NOT tested
 
-Nenhum teste rodou o jogo, o llama-server, o LibreTranslate nem o CTranslate2 reais. As
-missões inline do 1.20.1 foram conferidas no código do FTB Quests e do FTB Library
-(`{chave}` vira `I18n.get`), mas nenhum capítulo traduzido foi aberto no jogo. Os modpacks
-Forge só foram testados com instâncias montadas à mão. Os jars dos testes são montados a mão ou a partir dos
-repositórios; os livros reais do Botania e do Hex Casting foram lidos pelo extrator (por
-isso sabemos que são i18n), mas nenhum arquivo traduzido foi carregado pelo Patchouli nem
-pelo FTB Quests de verdade. As partes sem confirmação (formato exato do SNBT que o FTB
-Quests lê, marcas `&a` e `{image:...}`, layout de `assets/` e `libraries/` do Prism, nome
-do jar do cliente) estão listadas na seção 24 do documento.
+No test ran the real game, llama-server, LibreTranslate or CTranslate2. The inline quests of
+1.20.1 were checked against the FTB Quests and FTB Library code (`{key}` becomes `I18n.get`),
+but no translated chapter was opened in the game. Forge modpacks were only tested with
+hand-made instances. The test jars are hand-made or built from repositories; the real
+Botania and Hex Casting books were read by the extractor (which is how we know they are
+i18n), but no translated file was loaded by Patchouli or FTB Quests for real. Real Ollama
+and GPU runs, the game opening the pack, and Windows (the build compiles, but the menu's key
+reading needs `stty`) are also untested.
 
-Sobre as releases: o workflow `release.yml` só roda no GitHub e ainda não foi executado.
-Os binários de macOS e de Windows foram compilados, mas nunca abertos num macOS ou num
-Windows de verdade, e os avisos de SmartScreen e Gatekeeper descritos em "Instalação" não
-foram vistos aqui.
+About the releases: the `release.yml` workflow only runs on GitHub and has not been run yet.
+The macOS and Windows binaries were compiled, but never opened on a real macOS or Windows,
+and the SmartScreen and Gatekeeper warnings described in "Installation" were not seen here.
 
-## Conferir o pacote: `mtrad verify`
+## Checking the pack: `mtrad verify`
 
-`mtrad verify [--pack ARQ.zip]` abre o `.zip` que o `pack` montou e confere contra os originais: nomes de entrada seguros (sem `..`, `\`, caminho absoluto, duplicados), `pack.mcmeta` igual ao esperado para a versão do jogo, cada documento do Patchouli com a mesma estrutura do original (só as strings extraídas podem mudar) e arquivos de idioma só com chaves que foram extraídas. Termina com código 3 se achar algum problema. O mesmo conferidor está no menu em Manutenção > "Conferir o pacote montado". Um "Erro de carregamento" ou "Sem Entradas" num livro do Patchouli quase nunca vem do pacote; veja `docs/` (seção 39 do documento de pesquisa) para os motivos mais comuns.
+`mtrad verify [--pack FILE.zip]` opens the `.zip` built by `pack` and checks it against the
+originals: safe entry names (no `..`, `\`, absolute paths or duplicates), `pack.mcmeta` as
+expected for the game version, every Patchouli document with the same structure as the
+original (only the extracted strings may change), and language files with only keys that were
+extracted. It exits with code 3 if it finds a problem. The same check is in the menu under
+Maintenance > "Check the built pack". A Patchouli book showing "Loading error" or "No
+entries" almost never comes from the pack: Patchouli fails the whole book if any single page
+fails (for example a recipe that another mod or script removed).
 
-## Retomar, reprovados e texto de origem que mudou
+## Resuming, failures and source text that changed
 
-- Rodar `run` de novo continua de onde parou: o que já foi traduzido não é pedido outra vez.
-- Texto que a validação reprovou (`failed.jsonl`) é pedido de novo ao motor na próxima execução, sem usar o cache. Se o motor devolver a mesma resposta ruim, o texto continua reprovado e fica em inglês no pacote.
-- Cada tradução guarda o hash do texto de origem. Se o mod mudar o texto em inglês mantendo a chave, o texto é traduzido de novo; no `validate`, uma tradução feita para um texto que já mudou fica "pendente" (não vale nem como aprovada nem como reprovada) até ser refeita.
-- Texto com correção feita à mão que ainda vale (o original não mudou desde a correção) nunca é enviado ao motor.
-- Se o motor colocar `%s`/`%d` em outra ordem (normal em português), o `validate` troca por especificadores com posição (`%2$d`, `%1$s`) e avisa; códigos de cor com `&` que mudam num arquivo de idioma geram aviso.
-- Se uma tradução não puder ser gravada no cache, o `run` avisa e termina como incompleto (código de saída parcial).
-- Textos fixos em scripts do KubeJS (`.displayName('...')` em `startup_scripts`) não passam por arquivo de idioma e o pacote não os traduz; edite o script à mão (guarde uma cópia antes).
+- Running `run` again continues where it stopped: what was already translated is not asked again.
+- Text that validation rejected (`failed.jsonl`) is asked again from the engine on the next
+  run, without using the cache. If the engine returns the same bad answer, the text stays
+  rejected and stays in English in the pack.
+- Each translation stores the hash of the source text. If a mod changes the English text but
+  keeps the key, the text is translated again; in `validate`, a translation made for text that
+  has since changed is "pending" (neither approved nor rejected) until it is redone.
+- A text with a hand correction that is still valid (the original has not changed since) is
+  never sent to the engine.
+- If the engine puts `%s`/`%d` in another order (normal in Portuguese), `validate` replaces
+  them with positional specifiers (`%2$d`, `%1$s`) and warns; changed `&` colour codes in a
+  language file produce a warning.
+- If a translation cannot be written to the cache, `run` warns and ends as incomplete
+  (partial exit code).
+- Hard-coded texts in KubeJS scripts (`.displayName('...')` in `startup_scripts`) do not go
+  through a language file and the pack does not translate them; edit the script by hand (keep
+  a copy first).
 
-## Registro de execuções e `mtrad logs`
+## Run log and `mtrad logs`
 
-Cada comando de etapa (`scan`, `extract`, `translate`, `validate`, `pack`, `install`, `run`...) grava um registro em `work/logs/`:
+Every stage command (`scan`, `extract`, `translate`, `validate`, `pack`, `install`, `run`...)
+writes a record in `work/logs/`:
 
-- `run-AAAAMMDD-HHMMSS.log`: cabeçalho (versão, comando, pasta, máquina), tudo o que apareceu no terminal (do progresso fica só a última linha) e uma linha final com duração e resultado. O conteúdo do arquivo de configuração nunca entra (só o caminho), para não levar chave de API para o disco.
-- `requests-AAAAMMDD-HHMMSS.jsonl` (só na tradução): uma linha por pedido ao motor, com ID, tempo em ms, tentativa, se veio do cache, se foi refeito e o erro. O texto não é gravado, só o ID.
-- Ficam as 10 execuções mais recentes; as antigas são apagadas sozinhas.
+- `run-YYYYMMDD-HHMMSS.log`: header (version, command, folder, machine), everything shown in
+  the terminal (only the last progress line is kept) and a final line with duration and
+  result. The contents of the configuration file never go in (only its path), so no API key
+  reaches the disk.
+- `requests-YYYYMMDD-HHMMSS.jsonl` (translation only): one line per engine request, with ID,
+  time in ms, attempt, whether it came from the cache, whether it was redone, and the error.
+  The text is not stored, only the ID.
+- The 10 most recent runs are kept; older ones are deleted automatically.
 
-`mtrad logs -w work-real` resume a última execução: erros, linhas de cada etapa, motivos mais comuns em `errors.jsonl` e estatísticas dos pedidos (cache, erros, refeitos, tempo médio/mediana/p95, os 5 mais lentos). `-n 1` olha a penúltima, `-n 2` a antepenúltima.
+`mtrad logs -w work-real` summarizes the last run: errors, lines of each stage, the most
+common reasons in `errors.jsonl`, and request statistics (cache, errors, redone, mean/median/p95
+time, the 5 slowest). `-n 1` looks at the one before, `-n 2` at the one before that.
 
-## Cache dentro da pasta de trabalho
+## Cache inside the work folder
 
-O cache fica em `work/cache/cache.jsonl`, junto do resto do trabalho, e some só se você apagar a pasta de trabalho. Se existir um cache antigo em `<work>/../cache/cache.jsonl` e ainda não houver o novo, ele é copiado automaticamente na primeira execução.
+The cache lives in `work/cache/cache.jsonl`, with the rest of the work, and goes away only if
+you delete the work folder. If an old cache exists at `<work>/../cache/cache.jsonl` and the new
+one does not exist yet, it is copied automatically on the first run.
 
-## Gravação atômica
+## Atomic writes
 
-`pack` (pasta FTB Quests) e a extração de Patchouli/FTB Quests em `work/docs/` escrevem numa pasta `.new` e só trocam pela definitiva no fim (`schema.SwapDir`). Se algo falhar no meio, a saída anterior continua intacta e a pasta `.new` é removida. O ZIP do pacote já era escrito em `.tmp` e renomeado.
+`pack` (the FTB Quests folder) and the Patchouli/FTB Quests extraction into `work/docs/` write
+to a `.new` folder and swap it for the final one only at the end (`schema.SwapDir`). If
+something fails midway, the previous output stays intact and the `.new` folder is removed. The
+pack ZIP was already written to `.tmp` and renamed; files written this way are also flushed to
+disk (`fsync`) before the rename.
 
-## Binário único
+## Single binary
 
-O `mtrad` compila num arquivo estático (`CGO_ENABLED=0`), sem bibliotecas nem arquivos ao lado: o script do motor `ct2` (`ct2worker.py`) vai dentro do binário e o `mtrad init --engine ct2` o grava em `tools/` se ainda não existir.
+`mtrad` builds into one static file (`CGO_ENABLED=0`), with no libraries or files beside it:
+the `ct2` engine script (`ct2worker.py`) is embedded in the binary, and
+`mtrad init --engine ct2` writes it to `tools/` if it is not there yet. You do **not** need to
+keep the source folder to run the binary: put it anywhere (for example a folder in your
+`PATH`). Configuration is read from `./mtrad.json`, otherwise `~/.config/mtrad/mtrad.json`.
 
-    ./build.sh          # só esta máquina  -> dist/mtrad
-    ./build.sh all      # Linux (amd64, arm64), macOS (amd64, arm64) e Windows (amd64) + dist/SHA256SUMS
+    ./build.sh          # this machine only  -> dist/mtrad
+    ./build.sh all      # Linux (amd64, arm64), macOS (amd64, arm64) and Windows (amd64) + dist/SHA256SUMS
     VERSION=0.10 ./build.sh
 
-`mtrad --version` (ou `-V`) mostra versão, commit (se compilado num repositório git), versão do Go e sistema. A versão vem do `-X main.toolVersion=...` do `build.sh`.
+`mtrad --version` (or `-V`) shows version, commit (if built in a git repository), Go version
+and system. The version comes from `-X main.toolVersion=...` in `build.sh`.
 
-### Publicar uma versão (para quem mantém o projeto)
+### Publishing a version (for the maintainer)
 
-O workflow `.github/workflows/release.yml` dispara quando se envia uma tag `vX.Y.Z`: roda
-gofmt, vet e `go test -race`, compila com `VERSION=X.Y.Z` (a tag sem o `v`), confere que
-`dist/` tem exatamente os 5 binários e o `SHA256SUMS` e que `mtrad --version` mostra a
-versão, e cria a Release com esses 6 arquivos. As notas vêm dos commits desde a tag
-anterior (sem merges) e o texto fixo do fim está em `.github/release-footer.md`.
-Só o job que publica tem `contents: write`; as actions estão fixadas pelo SHA do commit.
+The workflow `.github/workflows/release.yml` runs when a `vX.Y.Z` tag is pushed: it runs
+gofmt, vet and `go test -race`, builds with `VERSION=X.Y.Z` (the tag without the `v`), checks
+that `dist/` has exactly the 5 binaries and `SHA256SUMS` and that `mtrad --version` shows the
+version, and creates the Release with those 6 files. The notes come from the commits since the
+previous tag (no merges) and the fixed text at the end is in `.github/release-footer.md`. Only
+the job that publishes has `contents: write`; the actions are pinned by commit SHA.
 
     git checkout main && git pull
     git tag -a v0.9.0 -m "mtrad 0.9.0"
     git push origin v0.9.0
 
-Se der errado antes de publicar, apague a tag (`git push origin --delete v0.9.0` e
-`git tag -d v0.9.0`), corrija e crie de novo. Uma release já criada o workflow não
-sobrescreve: apague-a na página de Releases antes de repetir a tag.
+If it goes wrong before publishing, delete the tag (`git push origin --delete v0.9.0` and
+`git tag -d v0.9.0`), fix it and create it again. The workflow does not overwrite a release
+that already exists: delete it on the Releases page before repeating the tag.
 
-## Interface no terminal (`mtrad ui`)
+## Terminal interface (`mtrad ui`)
 
-`mtrad` sem argumentos, num terminal, abre um menu controlado por teclas (↑ ↓ movem, Enter escolhe, Espaço marca, Esc volta, `/` filtra listas, `i` troca o estilo do menu da instância, `?` ajuda). `mtrad ui` faz o mesmo e aceita opções; com argumentos o `mtrad` continua sendo o programa de linha de comando de sempre. Tudo o que o menu faz tem um comando equivalente, mostrado na tela.
+`mtrad` with no arguments, in a terminal, opens a keyboard-driven menu (↑ ↓ move, Enter
+chooses, Space marks, Esc goes back, `/` filters lists, `i` switches the instance menu style,
+`?` help). `mtrad ui` does the same and accepts options; with arguments `mtrad` remains the
+usual command-line program. Everything the menu does has an equivalent command, shown on screen.
 
-    mtrad                          # abre o menu (precisa de terminal interativo)
+    mtrad                          # opens the menu (needs an interactive terminal)
     mtrad ui -c mtrad.json -w ~/mtrad-trabalho
-    mtrad ui --demo                # dados falsos: nada é executado nem gravado
+    mtrad ui --demo                # fake data: nothing is executed or written
 
-Fluxo: boas-vindas; "Configurar (setup)" em 6 passos (computador, motor, modelo, fontes, pasta de trabalho, resumo) grava o `mtrad.json` (o anterior vai para `.bak`); "Selecionar sua instância" lista as instâncias do Prism (Flatpak ou instalação normal) e abre o menu da instância: Traduzir (teste pequeno ou completo, com pausa em Esc), Escolher mods (grava `skip_mods`; mods de nomes repetitivos, como `<material> <forma>`, vêm marcados "repetitivo"), Reprovados (editar à mão, deixar em inglês, aplicar as correções, tentar de novo), Resultado (onde está o pacote e ativar no `options.txt`), Instalar missões do FTB Quests, Registros e Manutenção (verificar o ambiente, conferir o pacote montado, remover trava). A lista de mods mostra, ao lado de cada mod "repetitivo", quantos minutos a tradução dele deve levar na máquina.
+Flow: welcome; "Configure (setup)" in 6 steps (computer, engine, model, sources, work folder,
+summary) writes `mtrad.json` (the previous one goes to `.bak`); "Select your instance" lists
+the Prism Launcher instances (Flatpak or regular install) and opens the instance menu:
+Translate (small test or full, pausing with Esc), Choose mods (writes `skip_mods`; mods with
+repetitive names, like `<material> <shape>`, are marked "repetitive", with the estimated
+minutes next to each), Failed (edit by hand, leave in English, apply the corrections, try
+again), Result (where the pack is, and turn it on in `options.txt`), Install FTB Quests,
+Logs and Maintenance (check the environment, check the built pack, remove the lock).
 
-Onde as coisas ficam:
+Where things are:
 
-- Configuração: `./mtrad.json` se existir, senão `~/.config/mtrad/mtrad.json`. Dois campos são só da interface: `work` (pasta de trabalho) e `last_instance`.
-- Pasta de trabalho: `~/mtrad-trabalho` por padrão. Cada instância usa uma subpasta com o nome dela; uma pasta que já tem o trabalho de uma instância continua sendo dessa instância. O cache de traduções é compartilhado (`<pasta>/cache/cache.jsonl`).
-- Pacote: `<pasta do jogo>/resourcepacks/mtrad-pt_br.zip`, direto onde o jogo procura. "Ativar" mexe no `options.txt` (guardando o original em `options.txt.mtrad.bak`; uma segunda ativação guarda `.bak.2` e nunca troca a primeira cópia) e se recusa se o jogo estiver aberto.
-- Durante uma etapa a saída vai para o registro (`logs/`), não para a tela, para não bagunçar o menu; o resumo aparece ao fim. Se o motor falhar, a tela mostra o motivo (contagem + mensagem do `errors.jsonl`).
-- A interface nunca roda `sudo`, nunca apaga a pasta de trabalho nem o cache e não guarda chave de API.
+- Configuration: `./mtrad.json` if it exists, otherwise `~/.config/mtrad/mtrad.json`. Two
+  fields are only for the interface: `work` (work folder) and `last_instance`.
+- Work folder: `~/mtrad-trabalho` by default. Each instance uses a subfolder with its name; a
+  folder that already holds one instance's work stays that instance's. The translation cache is
+  shared (`<folder>/cache/cache.jsonl`).
+- Pack: `<game folder>/resourcepacks/mtrad-pt_br.zip`, right where the game looks. "Activate"
+  edits `options.txt` (keeping the original as `options.txt.mtrad.bak`; a second activation
+  keeps `.bak.2` and never replaces the first copy) and refuses if the game is open.
+- During a stage the output goes to the log (`logs/`), not to the screen, so the menu is not
+  messed up; the summary appears at the end. If the engine fails, the screen shows the reason
+  (count + message from `errors.jsonl`).
+- The interface never runs `sudo`, never deletes the work folder or the cache, and does not
+  store API keys.
 
-A lógica fica em `internal/ui`, que só fala com a interface `Backend` (`backend.go`). Há duas implementações: `Demo` (`demo.go`, dados falsos, usada em `--demo` e nos testes) e a de verdade em `cmd/mtrad/uibackend.go`, que chama as etapas do `mtrad`. As teclas são lidas com o comando `stty` (`term.go`), sem biblioteca extra, em Linux e macOS. O programa usa a tela alternativa e não desenha cor de fundo; `NO_COLOR=1` desliga as cores. O modo do terminal é `-icanon -echo -isig`, nunca `raw` (o `raw` desliga a conversão de `\n` em `\r\n` e a tela sai em escada). Janela pequena (menos de 24 linhas ou 66 colunas) usa o modo compacto. O desenho completo está em `docs/INTERFACE.md`.
+The logic is in `internal/ui`, which only talks to the `Backend` interface (`backend.go`).
+There are two implementations: `Demo` (`demo.go`, fake data, used by `--demo` and the tests)
+and the real one in `cmd/mtrad/uibackend.go`, which calls the `mtrad` stages. Keys are read
+with the `stty` command (`term.go`), with no extra library, on Linux and macOS. The program
+uses the alternate screen and draws no background colour; `NO_COLOR=1` turns colours off. The
+terminal mode is `-icanon -echo -isig`, never `raw` (`raw` turns off the `\n` to `\r\n`
+conversion and the screen comes out staircased). A small window (under 24 lines or 66
+columns) uses compact mode. The full design is in `docs/INTERFACE.md` (in Portuguese).
 
-`cmd/mtrad-ui` (o protótipo antigo, só com dados falsos) continua compilando, mas foi substituído por `mtrad ui --demo`.
+`cmd/mtrad-ui` (the old prototype, fake data only) still builds, but was replaced by
+`mtrad ui --demo`.
 
-## Protótipo visual alternativo (`mtrad-prototype`)
+## Alternative visual prototype (`mtrad-prototype`)
 
-`cmd/mtrad-prototype` (recebido do usuário em 28/10/2026) é uma demonstração separada para comparar três estilos visuais (Clássica, Painéis e Dashboard) com navegação por setas e o menu Visão geral / Instâncias / Traduzir / Revisar falhas / Resultados / Histórico / Configurações. É somente visual: não conecta ao backend. Ver `cmd/mtrad-prototype/README.md`. Correção feita no código recebido: o terminal era posto em `stty raw`, que desliga a conversão de `\n` em `\r\n` (a tela sai em escada); agora usa `-icanon -echo -isig`.
+`cmd/mtrad-prototype` (received from the user on 2026-10-28) is a separate demo to compare
+three visual styles (Classic, Panels and Dashboard) with arrow-key navigation and the menu
+Overview / Instances / Translate / Review failures / Results / History / Settings. It is
+visual only: it does not connect to the backend. See `cmd/mtrad-prototype/README.md`.
 
-## Licença
+## License
 
-O `mtrad` é software livre sob a GNU General Public License versão 3 (arquivo `LICENSE`): você pode usar, estudar, modificar e redistribuir, e quem distribuir uma versão modificada deve manter o código aberto sob a mesma licença. A licença vale para o programa, não para os pacotes de tradução que ele gera. O programa não distribui jars de mods nem modelos de tradução; cada um tem a licença do seu autor.
+`mtrad` is free software under the GNU General Public License version 3 (file `LICENSE`): you
+may use, study, modify and redistribute it, and anyone who distributes a modified version must
+keep the source open under the same license. The license covers the program, not the
+translation packs it generates. The program does not distribute mod jars or translation
+models; each has its author's own license.
 
-Veja o texto completo da licença no arquivo [LICENSE](LICENSE).
+See the full license text in the [LICENSE](LICENSE) file.
