@@ -21,6 +21,13 @@ import (
 // nosso, mas o arquivo pode ter sido trocado por outro).
 const maxVerifyEntry = 64 << 20
 
+// Limites globais impedem que um ZIP com muitas entradas ou grande volume
+// descompactado consuma recursos excessivos durante a verificação.
+const (
+	maxVerifyEntries = 100_000
+	maxVerifyTotal   = 512 << 20
+)
+
 // VerifyReport é o resultado de Verify.
 type VerifyReport struct {
 	Zip         string
@@ -55,9 +62,20 @@ func Verify(workDir, zipPath string) (VerifyReport, error) {
 	defer zr.Close()
 	problem := func(format string, a ...any) { rep.Problems = append(rep.Problems, fmt.Sprintf(format, a...)) }
 
-	// entradas: nomes seguros e sem repetição
+	// Entradas: limita quantidade e volume descompactado antes de indexar.
 	files := map[string]*zip.File{}
-	for _, f := range zr.File {
+	var totalUncompressed uint64
+	for i, f := range zr.File {
+		if i >= maxVerifyEntries {
+			problem("pacote excede o limite de %d entradas", maxVerifyEntries)
+			break
+		}
+		if f.UncompressedSize64 > maxVerifyTotal-totalUncompressed {
+			problem("pacote excede o limite de %d MiB descompactados", maxVerifyTotal>>20)
+			break
+		}
+		totalUncompressed += f.UncompressedSize64
+
 		n := f.Name
 		switch {
 		case strings.HasSuffix(n, "/"):
@@ -67,6 +85,9 @@ func Verify(workDir, zipPath string) (VerifyReport, error) {
 			continue
 		case files[n] != nil:
 			problem("entrada repetida: %q", n)
+			continue
+		case f.UncompressedSize64 > maxVerifyEntry:
+			problem("entrada %q excede o limite de %d MiB", n, maxVerifyEntry>>20)
 			continue
 		}
 		files[n] = f
@@ -84,7 +105,14 @@ func Verify(workDir, zipPath string) (VerifyReport, error) {
 			return nil, err
 		}
 		defer rc.Close()
-		return io.ReadAll(io.LimitReader(rc, maxVerifyEntry+1))
+		b, err := io.ReadAll(io.LimitReader(rc, maxVerifyEntry+1))
+		if err != nil {
+			return nil, err
+		}
+		if len(b) > maxVerifyEntry {
+			return nil, fmt.Errorf("entrada excedeu o limite de %d MiB durante a leitura", maxVerifyEntry>>20)
+		}
+		return b, nil
 	}
 
 	// pack.mcmeta: o mesmo formato que a versão da instância pede

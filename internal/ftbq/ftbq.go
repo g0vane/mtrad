@@ -62,7 +62,7 @@ func fmtOf(name string) (string, relaxed.Format) {
 }
 
 // find acha os arquivos en_us da pasta do jogo.
-func find(game string, errs Sink, c *Counts) []source {
+func find(game string, errs Sink, c *Counts) ([]source, error) {
 	lang := filepath.Join(game, filepath.FromSlash(QuestsDir), "lang")
 	var out []source
 	if st, err := os.Stat(filepath.Join(lang, "en_us.snbt")); err == nil && st.Mode().IsRegular() {
@@ -71,22 +71,33 @@ func find(game string, errs Sink, c *Counts) []source {
 		if _, err := os.Stat(filepath.Join(lang, "pt_br.snbt")); err == nil {
 			s.pt = QuestsDir + "/lang/pt_br.snbt"
 		}
-		return append(out, s)
+		return append(out, s), nil
 	}
 	dir := filepath.Join(lang, "en_us")
 	if st, err := os.Stat(dir); err == nil && st.IsDir() {
 		c.Era = "json5"
 		var names []string
-		_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
-			if err == nil && d.Type().IsRegular() {
+		walkErr := filepath.WalkDir(dir, func(p string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if d.Type().IsRegular() {
 				switch strings.ToLower(filepath.Ext(p)) {
 				case ".json5", ".json", ".snbt":
-					r, _ := filepath.Rel(dir, p)
+					r, err := filepath.Rel(dir, p)
+					if err != nil {
+						return fmt.Errorf("não foi possível obter o caminho relativo de %s: %w", p, err)
+					}
 					names = append(names, filepath.ToSlash(r))
 				}
 			}
 			return nil
 		})
+		if walkErr != nil {
+			c.FileErrors++
+			errs.Add(filepath.ToSlash(filepath.Join(QuestsDir, "lang", "en_us")), "", "não foi possível percorrer os arquivos de idioma do FTB Quests: "+walkErr.Error())
+			return nil, fmt.Errorf("percorrendo arquivos de idioma do FTB Quests: %w", walkErr)
+		}
 		sort.Strings(names)
 		for _, n := range names {
 			s := source{rel: QuestsDir + "/lang/en_us/" + n, out: QuestsDir + "/lang/pt_br/" + n}
@@ -95,12 +106,12 @@ func find(game string, errs Sink, c *Counts) []source {
 			}
 			out = append(out, s)
 		}
-		return out
+		return out, nil
 	}
 	if ents, err := os.ReadDir(filepath.Join(game, filepath.FromSlash(QuestsDir), "chapters")); err == nil && len(ents) > 0 {
 		c.Era = "inline"
 	}
-	return nil
+	return nil, nil
 }
 
 type nopSink struct{}
@@ -111,7 +122,7 @@ func (nopSink) Add(string, string, string) {}
 // "inline" (versões antigas, sem suporte) ou "" (não há FTB Quests).
 func Era(game string) string {
 	var c Counts
-	find(game, nopSink{}, &c)
+	_, _ = find(game, nopSink{}, &c)
 	return c.Era
 }
 
@@ -120,7 +131,10 @@ func isText(s string) bool { return strings.TrimSpace(s) != "" }
 // Extract lê as pastas de missões de game e entrega textos e documentos.
 func Extract(game string, errs Sink, out Out) (Counts, error) {
 	var c Counts
-	srcs := find(game, errs, &c)
+	srcs, err := find(game, errs, &c)
+	if err != nil {
+		return c, err
+	}
 	if c.Era == "inline" {
 		return c, extractInline(game, errs, out, &c)
 	}
