@@ -1,0 +1,122 @@
+name: release
+
+# Publica uma Release com os binários quando uma tag vX.Y.Z é criada.
+# Para criar: git tag -a v0.9.0 -m "mtrad 0.9.0" && git push origin v0.9.0
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+# Por padrão os jobs só leem. Só o job "release" recebe permissão de escrita.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.24'
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./... -race -count=1
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.24'
+      - name: Versão a partir da tag
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tag fora do formato vX.Y.Z: $tag" >&2
+            exit 1
+          fi
+          echo "VERSION=${tag#v}" >> "$GITHUB_ENV"
+      - name: Compilar para todos os sistemas
+        run: ./build.sh all
+      - name: Conferir os arquivos e a versão
+        run: |
+          set -euo pipefail
+          esperados="SHA256SUMS mtrad-darwin-amd64 mtrad-darwin-arm64 mtrad-linux-amd64 mtrad-linux-arm64 mtrad-windows-amd64.exe"
+          achados="$(ls dist | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+          if [ "$achados" != "$esperados" ]; then
+            echo "arquivos em dist/ diferentes do esperado" >&2
+            echo "esperado: $esperados" >&2
+            echo "achado:   $achados" >&2
+            exit 1
+          fi
+          (cd dist && sha256sum -c SHA256SUMS)
+          saida="$(dist/mtrad-linux-amd64 --version)"
+          echo "$saida"
+          case "$saida" in
+            "mtrad ${VERSION} "*) ;;
+            *) echo "a versão ${VERSION} não aparece no binário" >&2; exit 1 ;;
+          esac
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mtrad-binarios
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mtrad-binarios
+          path: dist
+      - name: Montar as notas da release
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          anterior="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "${tag}^" 2>/dev/null || true)"
+          {
+            echo "## O que mudou"
+            echo
+            if [ -n "$anterior" ]; then
+              echo "Desde a versão ${anterior}."
+              faixa="${anterior}..${tag}"
+            else
+              echo "Primeira versão publicada."
+              faixa="${tag}"
+            fi
+            echo
+            mudancas="$(git log --no-merges --pretty='- %s (%h)' "$faixa")"
+            if [ -n "$mudancas" ]; then
+              echo "$mudancas"
+            else
+              echo "- Sem mudanças registradas."
+            fi
+            echo
+            cat .github/release-footer.md
+          } > notas.md
+          cat notas.md
+      - name: Publicar a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "mtrad ${GITHUB_REF_NAME}" \
+            --notes-file notas.md \
+            dist/mtrad-linux-amd64 \
+            dist/mtrad-linux-arm64 \
+            dist/mtrad-darwin-amd64 \
+            dist/mtrad-darwin-arm64 \
+            dist/mtrad-windows-amd64.exe \
+            dist/SHA256SUMS

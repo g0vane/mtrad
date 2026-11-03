@@ -18,6 +18,70 @@ Forge e NeoForge (em teste, só com instâncias de mentira): o nome do mod vem d
 `META-INF/mods.toml` ou `neoforge.mods.toml` (ou `mcmod.info`, até 1.12) e os mods dentro
 de mods (`META-INF/jarjar`) também são lidos.
 
+## Instalação
+
+Não precisa instalar o Go: baixe o programa pronto na página de
+[Releases](https://github.com/g0vane/mtrad/releases) (use a versão mais recente).
+Cada release traz cinco arquivos e o `SHA256SUMS`. Escolha o seu:
+
+| Seu sistema | Baixe |
+|---|---|
+| Linux (PC comum, Intel ou AMD) | `mtrad-linux-amd64` |
+| Linux (ARM, como Raspberry Pi 4/5) | `mtrad-linux-arm64` |
+| macOS com chip Intel | `mtrad-darwin-amd64` |
+| macOS com chip Apple (M1, M2, M3...) | `mtrad-darwin-arm64` |
+| Windows 10 ou 11 (64 bits) | `mtrad-windows-amd64.exe` |
+
+Para saber qual é o seu Linux: `uname -m` mostra `x86_64` (amd64) ou `aarch64` (arm64).
+No macOS, o menu da maçã > "Sobre este Mac" mostra o chip.
+
+### Linux e macOS
+
+    cd ~/Downloads
+    sha256sum -c SHA256SUMS --ignore-missing     # no macOS: shasum -a 256 -c SHA256SUMS --ignore-missing
+    chmod +x mtrad-linux-amd64                   # troque pelo nome que você baixou
+    mkdir -p ~/.local/bin
+    mv mtrad-linux-amd64 ~/.local/bin/mtrad
+    mtrad --version
+
+Se o último comando disser "command not found", `~/.local/bin` não está no seu `PATH`.
+Veja com `echo $PATH` e, se faltar, acrescente ao `~/.bashrc` (ou `~/.zshrc` no macOS) a
+linha `export PATH="$HOME/.local/bin:$PATH"` e abra um terminal novo.
+
+### Windows
+
+1. Crie uma pasta, por exemplo `C:\mtrad`, e coloque ali o `mtrad-windows-amd64.exe`
+   renomeado para `mtrad.exe`.
+2. Para conferir o arquivo, no PowerShell:
+   `Get-FileHash .\mtrad.exe -Algorithm SHA256` e compare com a linha do
+   `mtrad-windows-amd64.exe` no `SHA256SUMS` (o hash deve ser igual).
+3. Para usar de qualquer pasta, acrescente `C:\mtrad` ao `PATH`: Iniciar > "Editar as
+   variáveis de ambiente do sistema" > Variáveis de Ambiente > `Path` do usuário > Novo.
+4. Abra um PowerShell novo e rode `mtrad --version`.
+
+O menu (`mtrad ui`) lê as teclas com o comando `stty` e por isso só funciona no Linux e no
+macOS; no Windows use os comandos (`mtrad run ...`).
+
+### Os binários não são assinados
+
+Os programas das releases não têm assinatura digital (isso custa dinheiro e o projeto é
+gratuito). Por isso o sistema pode avisar na primeira vez. O programa é o mesmo que sai do
+código-fonte aberto deste repositório; se preferir, compile você mesmo (próxima seção).
+
+- **Windows (SmartScreen):** aparece "O Windows protegeu o computador". Clique em
+  "Mais informações" e depois em "Executar assim mesmo". Rodando pelo PowerShell, o aviso
+  costuma não aparecer. Se o arquivo vier marcado como baixado da internet, o PowerShell
+  libera com `Unblock-File .\mtrad.exe`.
+- **macOS (Gatekeeper):** aparece "não pode ser aberto porque não foi possível verificar
+  o desenvolvedor" ou o terminal responde `killed`. Tire a marca de quarentena do
+  arquivo: `xattr -d com.apple.quarantine ~/.local/bin/mtrad`. Outro jeito: tente abrir
+  uma vez, depois vá em Ajustes do Sistema > Privacidade e Segurança e clique em
+  "Abrir mesmo assim".
+- **Linux:** não há bloqueio; só falta a permissão de execução (`chmod +x`).
+
+Estas instruções de contorno vêm da documentação dos próprios sistemas. Nenhuma foi testada
+aqui em Windows ou macOS de verdade (ver "O que NÃO foi testado").
+
 ## Compilar
 
     go build -o mtrad ./cmd/mtrad        # só biblioteca padrão do Go (1.24 ou mais)
@@ -113,6 +177,11 @@ pelo FTB Quests de verdade. As partes sem confirmação (formato exato do SNBT q
 Quests lê, marcas `&a` e `{image:...}`, layout de `assets/` e `libraries/` do Prism, nome
 do jar do cliente) estão listadas na seção 24 do documento.
 
+Sobre as releases: o workflow `release.yml` só roda no GitHub e ainda não foi executado.
+Os binários de macOS e de Windows foram compilados, mas nunca abertos num macOS ou num
+Windows de verdade, e os avisos de SmartScreen e Gatekeeper descritos em "Instalação" não
+foram vistos aqui.
+
 ## Conferir o pacote: `mtrad verify`
 
 `mtrad verify [--pack ARQ.zip]` abre o `.zip` que o `pack` montou e confere contra os originais: nomes de entrada seguros (sem `..`, `\`, caminho absoluto, duplicados), `pack.mcmeta` igual ao esperado para a versão do jogo, cada documento do Patchouli com a mesma estrutura do original (só as strings extraídas podem mudar) e arquivos de idioma só com chaves que foram extraídas. Termina com código 3 se achar algum problema. O mesmo conferidor está no menu em Manutenção > "Conferir o pacote montado". Um "Erro de carregamento" ou "Sem Entradas" num livro do Patchouli quase nunca vem do pacote; veja `docs/` (seção 39 do documento de pesquisa) para os motivos mais comuns.
@@ -150,10 +219,27 @@ O cache fica em `work/cache/cache.jsonl`, junto do resto do trabalho, e some só
 O `mtrad` compila num arquivo estático (`CGO_ENABLED=0`), sem bibliotecas nem arquivos ao lado: o script do motor `ct2` (`ct2worker.py`) vai dentro do binário e o `mtrad init --engine ct2` o grava em `tools/` se ainda não existir.
 
     ./build.sh          # só esta máquina  -> dist/mtrad
-    ./build.sh all      # Linux, macOS e Windows (amd64/arm64) + dist/SHA256SUMS
+    ./build.sh all      # Linux (amd64, arm64), macOS (amd64, arm64) e Windows (amd64) + dist/SHA256SUMS
     VERSION=0.10 ./build.sh
 
 `mtrad --version` (ou `-V`) mostra versão, commit (se compilado num repositório git), versão do Go e sistema. A versão vem do `-X main.toolVersion=...` do `build.sh`.
+
+### Publicar uma versão (para quem mantém o projeto)
+
+O workflow `.github/workflows/release.yml` dispara quando se envia uma tag `vX.Y.Z`: roda
+gofmt, vet e `go test -race`, compila com `VERSION=X.Y.Z` (a tag sem o `v`), confere que
+`dist/` tem exatamente os 5 binários e o `SHA256SUMS` e que `mtrad --version` mostra a
+versão, e cria a Release com esses 6 arquivos. As notas vêm dos commits desde a tag
+anterior (sem merges) e o texto fixo do fim está em `.github/release-footer.md`.
+Só o job que publica tem `contents: write`; as actions estão fixadas pelo SHA do commit.
+
+    git checkout main && git pull
+    git tag -a v0.9.0 -m "mtrad 0.9.0"
+    git push origin v0.9.0
+
+Se der errado antes de publicar, apague a tag (`git push origin --delete v0.9.0` e
+`git tag -d v0.9.0`), corrija e crie de novo. Uma release já criada o workflow não
+sobrescreve: apague-a na página de Releases antes de repetir a tag.
 
 ## Interface no terminal (`mtrad ui`)
 

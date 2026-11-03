@@ -23,6 +23,67 @@ Forge and NeoForge (in testing, only with hand-made instances): the mod name com
 `META-INF/mods.toml` or `neoforge.mods.toml` (or `mcmod.info`, up to 1.12), and mods nested
 inside mods (`META-INF/jarjar`) are read too.
 
+## Installation
+
+You do not need Go: download the ready-made program from the
+[Releases](https://github.com/g0vane/mtrad/releases) page (use the latest version). Each
+release has five files and a `SHA256SUMS`. Pick yours:
+
+| Your system | Download |
+|---|---|
+| Linux (regular PC, Intel or AMD) | `mtrad-linux-amd64` |
+| Linux (ARM, such as Raspberry Pi 4/5) | `mtrad-linux-arm64` |
+| macOS with an Intel chip | `mtrad-darwin-amd64` |
+| macOS with an Apple chip (M1, M2, M3...) | `mtrad-darwin-arm64` |
+| Windows 10 or 11 (64-bit) | `mtrad-windows-amd64.exe` |
+
+To know which Linux you have: `uname -m` shows `x86_64` (amd64) or `aarch64` (arm64). On
+macOS, the Apple menu > "About This Mac" shows the chip.
+
+### Linux and macOS
+
+    cd ~/Downloads
+    sha256sum -c SHA256SUMS --ignore-missing     # on macOS: shasum -a 256 -c SHA256SUMS --ignore-missing
+    chmod +x mtrad-linux-amd64                   # use the name you downloaded
+    mkdir -p ~/.local/bin
+    mv mtrad-linux-amd64 ~/.local/bin/mtrad
+    mtrad --version
+
+If the last command says "command not found", `~/.local/bin` is not in your `PATH`. Check with
+`echo $PATH` and, if it is missing, add the line `export PATH="$HOME/.local/bin:$PATH"` to
+`~/.bashrc` (or `~/.zshrc` on macOS) and open a new terminal.
+
+### Windows
+
+1. Create a folder, for example `C:\mtrad`, and put `mtrad-windows-amd64.exe` there, renamed
+   to `mtrad.exe`.
+2. To check the file, in PowerShell: `Get-FileHash .\mtrad.exe -Algorithm SHA256` and compare
+   it with the `mtrad-windows-amd64.exe` line in `SHA256SUMS` (the hash must be equal).
+3. To use it from any folder, add `C:\mtrad` to the `PATH`: Start > "Edit the system
+   environment variables" > Environment Variables > the user's `Path` > New.
+4. Open a new PowerShell and run `mtrad --version`.
+
+The menu (`mtrad ui`) reads keys with the `stty` command, so it only works on Linux and
+macOS; on Windows use the commands (`mtrad run ...`).
+
+### The binaries are not signed
+
+The programs in the releases have no digital signature (that costs money and the project is
+free). So the system may warn you the first time. The program is the same one built from the
+open source code in this repository; if you prefer, build it yourself (next section).
+
+- **Windows (SmartScreen):** "Windows protected your PC" appears. Click "More info" and then
+  "Run anyway". Running from PowerShell usually shows no warning. If the file is marked as
+  downloaded from the internet, PowerShell clears it with `Unblock-File .\mtrad.exe`.
+- **macOS (Gatekeeper):** "cannot be opened because the developer cannot be verified" appears,
+  or the terminal answers `killed`. Remove the quarantine mark from the file:
+  `xattr -d com.apple.quarantine ~/.local/bin/mtrad`. Another way: try to open it once, then
+  go to System Settings > Privacy & Security and click "Open Anyway".
+- **Linux:** there is no block; only the execute permission is missing (`chmod +x`).
+
+These workarounds come from the systems' own documentation. None was tested here on a real
+Windows or macOS (see "What was NOT tested").
+
 ## Build
 
     go build -o mtrad ./cmd/mtrad        # Go standard library only (Go 1.24 or newer)
@@ -120,6 +181,10 @@ i18n), but no translated file was loaded by Patchouli or FTB Quests for real. Re
 and GPU runs, the game opening the pack, and Windows (the build compiles, but the menu's key
 reading needs `stty`) are also untested.
 
+About the releases: the `release.yml` workflow only runs on GitHub and has not been run yet.
+The macOS and Windows binaries were compiled, but never opened on a real macOS or Windows,
+and the SmartScreen and Gatekeeper warnings described in "Installation" were not seen here.
+
 ## Checking the pack: `mtrad verify`
 
 `mtrad verify [--pack FILE.zip]` opens the `.zip` built by `pack` and checks it against the
@@ -192,11 +257,28 @@ keep the source folder to run the binary: put it anywhere (for example a folder 
 `PATH`). Configuration is read from `./mtrad.json`, otherwise `~/.config/mtrad/mtrad.json`.
 
     ./build.sh          # this machine only  -> dist/mtrad
-    ./build.sh all      # Linux, macOS and Windows (amd64/arm64) + dist/SHA256SUMS
+    ./build.sh all      # Linux (amd64, arm64), macOS (amd64, arm64) and Windows (amd64) + dist/SHA256SUMS
     VERSION=0.10 ./build.sh
 
 `mtrad --version` (or `-V`) shows version, commit (if built in a git repository), Go version
 and system. The version comes from `-X main.toolVersion=...` in `build.sh`.
+
+### Publishing a version (for the maintainer)
+
+The workflow `.github/workflows/release.yml` runs when a `vX.Y.Z` tag is pushed: it runs
+gofmt, vet and `go test -race`, builds with `VERSION=X.Y.Z` (the tag without the `v`), checks
+that `dist/` has exactly the 5 binaries and `SHA256SUMS` and that `mtrad --version` shows the
+version, and creates the Release with those 6 files. The notes come from the commits since the
+previous tag (no merges) and the fixed text at the end is in `.github/release-footer.md`. Only
+the job that publishes has `contents: write`; the actions are pinned by commit SHA.
+
+    git checkout main && git pull
+    git tag -a v0.9.0 -m "mtrad 0.9.0"
+    git push origin v0.9.0
+
+If it goes wrong before publishing, delete the tag (`git push origin --delete v0.9.0` and
+`git tag -d v0.9.0`), fix it and create it again. The workflow does not overwrite a release
+that already exists: delete it on the Releases page before repeating the tag.
 
 ## Terminal interface (`mtrad ui`)
 
