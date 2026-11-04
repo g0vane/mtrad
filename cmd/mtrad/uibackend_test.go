@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"mtrad/internal/hardware"
 	"mtrad/internal/schema"
 	"mtrad/internal/translate"
 	"mtrad/internal/ui"
@@ -498,5 +499,170 @@ func TestBackendVerifyAfterTranslateAndAfterDamage(t *testing.T) {
 	out, err = b.Verify()
 	if err != nil || !out.Partial || !strings.Contains(strings.Join(out.Lines, "\n"), "não existe no original") {
 		t.Fatalf("o pacote adulterado devia ser apontado: %v %+v", err, out)
+	}
+}
+
+func TestBackendHardwareRecomendaEUsaCache(t *testing.T) {
+	b, _, _, _ := testBackend(t)
+	b.ollamaBase = "http://127.0.0.1:1" // Ollama parado: nada instalado conhecido
+	calls := 0
+	b.hwDetect = func() hardware.Info {
+		calls++
+		return hardware.Info{CPUCores: 8, RAMTotal: 16 << 30, RAMAvail: 9 << 30,
+			GPUs: []hardware.GPU{{Vendor: "amd", Name: "RX 580", Total: 8 << 30, Used: 512 << 20, UsedKnown: true}}}
+	}
+	h := b.Hardware()
+	if calls != 1 {
+		t.Fatalf("calls = %d", calls)
+	}
+	var rec string
+	for _, o := range h.Options {
+		if o.Recommended {
+			rec = o.Name
+		}
+	}
+	if rec != "translategemma:4b" {
+		t.Fatalf("recomendado = %q (%s)", rec, h.Why)
+	}
+	if !strings.Contains(strings.Join(h.Lines, "\n"), "RX 580") || h.Checked == "" {
+		t.Fatalf("faltou a linha da placa ou a data do catálogo: %+v", h)
+	}
+	b.Hardware()
+	if calls != 1 {
+		t.Fatalf("a segunda chamada devia usar o cache: calls = %d", calls)
+	}
+	b.Doctor() // "Verificar de novo" mede outra vez
+	b.Hardware()
+	if calls != 2 {
+		t.Fatalf("depois do Doctor devia medir de novo: calls = %d", calls)
+	}
+}
+
+// O setup do menu troca o modelo, mas não pode apagar o que o usuário ajustou
+// à mão no mesmo motor (fallback, workers, limites).
+func TestBackendSetupPreservaAjustesDoMotor(t *testing.T) {
+	b, root, _, _ := testBackend(t)
+	setup := func(model string) error {
+		return b.SaveSetup(ui.Setup{Engine: "ollama", Model: model, Work: filepath.Join(root, "w"), Config: b.cfgPath})
+	}
+	if err := setup("m:1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := editConfigFile(b.cfgPath, func(m map[string]any) error {
+		if err := setKey(m, "translate.engines.reserva", map[string]any{"type": "echo"}); err != nil {
+			return err
+		}
+		if err := setKey(m, "translate.engines.llm.fallback", "reserva"); err != nil {
+			return err
+		}
+		if err := setKey(m, "translate.engines.llm.workers", json.Number("4")); err != nil {
+			return err
+		}
+		return setKey(m, "translate.engines.llm.max_wait_sec", json.Number("30"))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.reload()
+	if err := setup("m:2"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := loadConfig(b.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ec := c.Translate.Engines["llm"]
+	if ec.Model != "m:2" {
+		t.Fatalf("o modelo devia ter trocado: %+v", ec)
+	}
+	if ec.Fallback != "reserva" || ec.Workers != 4 || ec.MaxWaitSec != 30 {
+		t.Fatalf("o setup apagou o que o usuário ajustou no motor: %+v", ec)
+	}
+	if _, ok := c.Translate.Engines["reserva"]; !ok {
+		t.Fatal("o motor reserva sumiu")
+	}
+}
+
+// Trocar para outro motor substitui a entrada, mas o fallback continua valendo
+// quando o motor reserva ainda existe e não forma um ciclo.
+func TestBackendSetupTrocaDeMotorMantemFallbackValido(t *testing.T) {
+	b, root, _, _ := testBackend(t)
+	save := func(engine, model string) error {
+		return b.SaveSetup(ui.Setup{Engine: engine, Model: model, Work: filepath.Join(root, "w"), Config: b.cfgPath})
+	}
+	if err := save("ollama", "m:1"); err != nil {
+		t.Fatal(err)
+	}
+	// o motor "llm" (llama-server, outro endereço) vai trocar de lugar com o Ollama
+	if err := editConfigFile(b.cfgPath, func(m map[string]any) error {
+		if err := setKey(m, "translate.engines.reserva", map[string]any{"type": "echo"}); err != nil {
+			return err
+		}
+		return setKey(m, "translate.engines.llm.fallback", "reserva")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.reload()
+	if err := save("llama", ""); err != nil { // llama usa o mesmo nome "llm", mas outra URL
+		t.Fatal(err)
+	}
+	c, err := loadConfig(b.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ec := c.Translate.Engines["llm"]
+	if !strings.Contains(ec.BaseURL, ":8080") || ec.Fallback != "reserva" {
+		t.Fatalf("a troca de motor devia manter o fallback válido: %+v", ec)
+	}
+	// reserva que deixou de existir: não pode impedir o setup
+	if err := editConfigFile(b.cfgPath, func(m map[string]any) error {
+		// remove o reserva e o fallback juntos, como o usuário faria
+		if err := unsetKey(m, "translate.engines.llm.fallback"); err != nil {
+			return err
+		}
+		return unsetKey(m, "translate.engines.reserva")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.reload()
+	if err := save("ollama", "m:3"); err != nil {
+		t.Fatalf("sem motor reserva o setup tem que funcionar: %v", err)
+	}
+}
+
+func TestEngineKindReconheceNuvem(t *testing.T) {
+	for url, want := range map[string]string{
+		"https://api.openai.com/v1":                               "openai",
+		"https://openrouter.ai/api/v1":                            "openrouter",
+		"https://generativelanguage.googleapis.com/v1beta/openai": "gemini",
+		"http://127.0.0.1:11434/v1":                               "ollama",
+		"http://127.0.0.1:8080/v1":                                "llama",
+	} {
+		if got := engineKind(translate.EngineConfig{Type: "openai", BaseURL: url}); got != want {
+			t.Errorf("%s: engineKind = %q, queria %q", url, got, want)
+		}
+	}
+}
+
+func TestBackendSetupComMotorDeNuvem(t *testing.T) {
+	b, root, _, _ := testBackend(t)
+	save := func(engine, model string) error {
+		return b.SaveSetup(ui.Setup{Engine: engine, Model: model, Work: filepath.Join(root, "w"), Config: b.cfgPath})
+	}
+	if err := save("openai", ""); err == nil {
+		t.Fatal("nuvem sem nome de modelo devia dar erro, sem chutar um nome")
+	}
+	if err := save("openai", "modelo-x"); err != nil {
+		t.Fatal(err)
+	}
+	if d := b.Defaults(); d.Engine != "openai" || d.Model != "modelo-x" {
+		t.Fatalf("%+v", d)
+	}
+	raw, _ := os.ReadFile(b.cfgPath)
+	if !strings.Contains(string(raw), `"api_key_env": "OPENAI_API_KEY"`) {
+		t.Fatalf("o arquivo devia guardar o nome da variável da chave:\n%s", raw)
+	}
+	// o status do painel não confunde a nuvem com o Ollama
+	if st := b.Status(); st.OllamaUp {
+		t.Fatalf("motor de nuvem não é Ollama: %+v", st)
 	}
 }

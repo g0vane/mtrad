@@ -18,6 +18,7 @@ import (
 
 	"mtrad/internal/ftbq"
 	"mtrad/internal/glossary"
+	"mtrad/internal/hardware"
 	"mtrad/internal/route"
 	"mtrad/internal/schema"
 	"mtrad/internal/translate"
@@ -86,7 +87,9 @@ type Input struct {
 	Work      string
 	Route     *route.Config     // nil = sem arquivo de configuração
 	Translate *translate.Config // idem
-	Deps      Deps
+	// Hardware é o que `hardware.Detect` mediu (nil = não conferir o computador).
+	Hardware *hardware.Info
+	Deps     Deps
 }
 
 type runner struct {
@@ -115,6 +118,7 @@ func Run(ctx context.Context, in Input) []Check {
 	r.stages(in.Work)
 	r.errorsLog(in.Work)
 	r.glossary(in.Work)
+	r.hardware(in)
 	r.engines(ctx, in, d)
 	r.disk(in.Work, d)
 	r.writable("pasta de trabalho", in.Work, d)

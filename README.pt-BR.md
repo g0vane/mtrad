@@ -96,7 +96,14 @@ aqui em Windows ou macOS de verdade (ver "O que NÃO foi testado").
     mtrad run -i PASTA_DA_INSTANCIA -c mtrad.json --limit 50    # teste pequeno
     mtrad run -i PASTA_DA_INSTANCIA -c mtrad.json --install     # tudo, e copia o FTB Quests
 
-`init` aceita `--engine llama|ollama|gemini|libre|ct2` (ollama e gemini pedem `--model`).
+`init` aceita `--engine llama|ollama|gemini|openai|openrouter|custom|libre|ct2`. Ollama e os
+motores de nuvem (`gemini`, `openai`, `openrouter`) pedem `--model`; o mtrad não chuta nomes de
+modelo de nuvem. O motor `custom` fala com qualquer servidor compatível com a API de chat da
+OpenAI: `--base-url http://127.0.0.1:1234/v1 [--api-key-env NOME_DA_VARIAVEL]`. A chave da API
+fica só no ambiente: o arquivo guarda o **nome** da variável, e o `init` recusa uma chave colada
+no lugar do nome. `--fallback gemini|openai|openrouter --fallback-model M` liga um motor de nuvem
+como reserva do local (os textos que o principal não traduzir vão para a nuvem; sem `--fallback`,
+nada sai do computador). Detalhes em `docs/HARDWARE_E_MOTORES.md`.
 Para testar sem motor: configure um motor `{"type":"echo"}` (devolve o texto com "[pt] "
 na frente).
 
@@ -146,7 +153,27 @@ que já foi traduzido: aumente a lista aos poucos e rode de novo.
 - Livros do Patchouli com `"i18n": true` (Botania, Hex Casting) guardam o texto no arquivo
   de idioma; o `patchouli` pula esses livros e o `extract` já cobre o texto.
 
-## Medir um motor
+## Medir a velocidade: `mtrad bench`
+
+    mtrad bench -c mtrad.json [--engine llm] [-n 12] [--words 120000]
+
+Traduz frases de exemplo em cada motor da configuração e mostra a primeira resposta (que
+costuma incluir carregar o modelo), palavras por segundo, tempo por pedido (mediana e p95) e
+quanto tempo levariam as palavras que faltam (lidas da pasta de trabalho, ou `--words`). Motores
+fora do computador são pulados, a menos que você use `--allow-cloud` (envia frases de exemplo e
+pode ser cobrado). Não mede o tempo até a primeira palavra nem a memória da placa. Durante
+`mtrad translate` e na tela de tradução do menu, o tempo decorrido, as palavras por segundo e o
+tempo que falta aparecem na barra de progresso.
+
+## Placa de vídeo, Intel Arc e llama.cpp
+
+`mtrad doctor` mede a memória da placa (NVIDIA por `nvidia-smi`, AMD por `/sys`, Mac por `sysctl`) e
+sugere um modelo local. Se `llama-server` (llama.cpp) estiver no `PATH`, o mtrad também roda
+`llama-server --list-devices`, que mede Intel Arc, AMD e NVIDIA. Se achar uma placa e não
+conseguir medir (comum na Intel Arc), ele avisa em vez de dizer "só CPU". Nesse caso informe a
+memória à mão: `MTRAD_VRAM_GIB=16 mtrad doctor`. Veja `docs/HARDWARE_E_MOTORES.md`.
+
+## Medir a qualidade de um motor
 
     mtrad evalset -w work -o evalwork -n 500
     mtrad protect -w evalwork && mtrad route -c mtrad.json -w evalwork

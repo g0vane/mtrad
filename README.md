@@ -98,7 +98,14 @@ Windows or macOS (see "What was NOT tested").
     mtrad run -i INSTANCE_FOLDER -c mtrad.json --limit 50       # small test
     mtrad run -i INSTANCE_FOLDER -c mtrad.json --install        # everything, and copy FTB Quests
 
-`init` accepts `--engine llama|ollama|gemini|libre|ct2` (ollama and gemini need `--model`).
+`init` accepts `--engine llama|ollama|gemini|openai|openrouter|custom|libre|ct2`. Ollama and the
+cloud engines (`gemini`, `openai`, `openrouter`) need `--model`; mtrad does not guess cloud model
+names. The `custom` engine talks to any server compatible with the OpenAI chat API:
+`--base-url http://127.0.0.1:1234/v1 [--api-key-env VARIABLE_NAME]`. The API key lives only in the
+environment: the file stores the variable **name**, and `init` rejects a key pasted in its place.
+`--fallback gemini|openai|openrouter --fallback-model M` sets a cloud engine as the local one's
+backup (texts the main engine fails on are sent to the cloud; without `--fallback`, nothing leaves
+the computer). See `docs/HARDWARE_E_MOTORES.md` (Portuguese).
 To test without an engine, configure an engine `{"type":"echo"}` (it returns the text with
 "[pt] " in front).
 
@@ -151,7 +158,26 @@ grow the list little by little and run again.
 - Patchouli books with `"i18n": true` (Botania, Hex Casting) keep their text in the language
   file; `patchouli` skips those books and `extract` already covers the text.
 
-## Measuring an engine
+## Measuring speed: `mtrad bench`
+
+    mtrad bench -c mtrad.json [--engine llm] [-n 12] [--words 120000]
+
+Translates sample sentences on each configured engine and prints the first response (which
+usually includes loading the model), words per second, time per request (median and p95) and how
+long the remaining words would take (read from the work folder, or `--words`). Engines outside
+this computer are skipped unless you pass `--allow-cloud` (sends sample sentences, may be billed).
+It does not measure time to first token or GPU memory. During `mtrad translate` and on the menu's
+translate screen, elapsed time, words per second and time remaining show in the progress bar.
+
+## GPU, Intel Arc and llama.cpp
+
+`mtrad doctor` measures GPU memory (NVIDIA via `nvidia-smi`, AMD via `/sys`, Mac via `sysctl`) and
+suggests a local model. If `llama-server` (llama.cpp) is on your `PATH`, mtrad also runs
+`llama-server --list-devices`, which measures Intel Arc, AMD and NVIDIA. If it finds a card but
+cannot measure it (common with Intel Arc), it says so instead of reporting "CPU only". Then set the
+memory by hand: `MTRAD_VRAM_GIB=16 mtrad doctor`. See `docs/HARDWARE_E_MOTORES.md`.
+
+## Measuring an engine's quality
 
     mtrad evalset -w work -o evalwork -n 500
     mtrad protect -w evalwork && mtrad route -c mtrad.json -w evalwork

@@ -1,6 +1,9 @@
 package ui
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Instance é uma instância do Prism Launcher.
 type Instance struct {
@@ -64,6 +67,37 @@ type Setup struct {
 	Work, Config  string   // pasta de trabalho e arquivo de configuração
 }
 
+// ModelOption é um modelo local do catálogo avaliado para este computador.
+type ModelOption struct {
+	Name    string
+	SizeGiB float64
+	// Fit diz onde cabe ("cabe na placa de vídeo", "só na CPU (lento)"...).
+	Fit string
+	// Runs é falso quando o modelo não cabe nem somando a memória do sistema.
+	Runs        bool
+	Installed   bool
+	Recommended bool
+}
+
+// Hardware é o que o mtrad achou no computador e a avaliação dos modelos
+// locais do catálogo.
+type Hardware struct {
+	Lines   []string      // uma linha por item (memória, processador, placa...)
+	Options []ModelOption // na ordem do catálogo
+	Why     string        // por que o mtrad sugere o modelo marcado ("" = sem sugestão)
+	Checked string        // data em que o catálogo foi conferido
+}
+
+// Rate é o andamento da tradução em palavras, para a barra de progresso.
+type Rate struct {
+	TotalWords, DoneWords int64
+	// WordsPerSec é a velocidade do motor (o cache não entra). 0 = ainda sem medida.
+	WordsPerSec float64
+	// Remaining é o tempo que falta no ritmo atual; só vale se RemainingKnown.
+	Remaining      time.Duration
+	RemainingKnown bool
+}
+
 // Estimate é a estimativa que a tela de traduzir mostra antes de começar.
 type Estimate struct {
 	Texts  int // 0 = ainda não se sabe (nenhuma leitura dos mods foi feita)
@@ -101,6 +135,8 @@ type Backend interface {
 	SelectInstance(in Instance) (Instance, error)
 	Status() Status
 	Models() []string
+	// Hardware mede o computador e avalia os modelos locais do catálogo.
+	Hardware() Hardware
 	Doctor() []Check
 	// Prepare lê os mods da instância (scan, extract, diff), sem traduzir, para
 	// a lista de mods e a estimativa terem números.
@@ -114,6 +150,8 @@ type Backend interface {
 	// os arquivos do FTB Quests no fim. Cancelar o ctx pausa: o que já foi
 	// traduzido fica guardado e o pacote parcial é montado.
 	Translate(ctx context.Context, limit int, install bool, progress func(done, total int)) (Outcome, error)
+	// Rate diz o andamento em palavras da tradução em curso (tudo zero se não há).
+	Rate() Rate
 	Failed() []Failed
 	SaveEdit(id, text string) error
 	Leave(id string) error

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"mtrad/internal/hardware"
 	"mtrad/internal/route"
 	"mtrad/internal/schema"
 	"mtrad/internal/translate"
@@ -252,5 +253,134 @@ func TestDefaultWritableLeavesNothingBehind(t *testing.T) {
 	}
 	if err := DefaultDeps().Writable(filepath.Join(dir, "nao-existe")); err == nil {
 		t.Fatal("pasta inexistente devia dar erro")
+	}
+}
+
+func hwInfo(vramGiB uint64, ramGiB uint64) *hardware.Info {
+	i := &hardware.Info{CPUCores: 8, RAMTotal: ramGiB << 30, RAMAvail: ramGiB << 30}
+	if vramGiB > 0 {
+		i.GPUs = []hardware.GPU{{Vendor: "amd", Name: "RX 580", Total: vramGiB << 30, UsedKnown: true}}
+	}
+	return i
+}
+
+func ollamaCfg(model string) (*route.Config, *translate.Config) {
+	return &route.Config{Default: "llm"}, &translate.Config{Engines: map[string]translate.EngineConfig{
+		"llm": {Type: "openai", BaseURL: "http://127.0.0.1:11434/v1", Model: model},
+	}}
+}
+
+func TestHardwareSemMedicaoNaoAcrescentaNada(t *testing.T) {
+	cs := Run(context.Background(), Input{Work: t.TempDir(), Deps: fakeDeps()})
+	if len(find(cs, "computador")) != 0 || len(find(cs, "modelo sugerido")) != 0 {
+		t.Fatalf("sem Hardware o doctor não devia falar do computador: %+v", cs)
+	}
+}
+
+func TestHardwareSugereEConfereOModeloDoOllama(t *testing.T) {
+	r, tc := ollamaCfg("translategemma:4b")
+	cs := Run(context.Background(), Input{Work: t.TempDir(), Route: r, Translate: tc, Hardware: hwInfo(8, 16), Deps: fakeDeps()})
+	if len(find(cs, "computador")) < 2 {
+		t.Fatalf("faltaram as linhas do computador: %+v", cs)
+	}
+	if levelOf(t, cs, "modelo sugerido") != OK || levelOf(t, cs, "modelo do motor llm") != OK {
+		t.Fatalf("%+v", cs)
+	}
+	if len(find(cs, "placa de vídeo")) != 0 {
+		t.Fatalf("com placa não devia haver aviso de placa: %+v", find(cs, "placa de vídeo"))
+	}
+}
+
+func TestHardwareAvisaModeloGrandeDemais(t *testing.T) {
+	r, tc := ollamaCfg("translategemma:27b")
+	cs := Run(context.Background(), Input{Work: t.TempDir(), Route: r, Translate: tc, Hardware: hwInfo(8, 8), Deps: fakeDeps()})
+	if levelOf(t, cs, "modelo do motor llm") != Warn {
+		t.Fatalf("27b com 8 GiB de RAM e 8 de placa devia dar aviso: %+v", find(cs, "modelo do motor llm"))
+	}
+	if !strings.Contains(find(cs, "modelo do motor llm")[0].Msg, "não cabe") {
+		t.Fatalf("a mensagem devia dizer que não cabe: %+v", find(cs, "modelo do motor llm"))
+	}
+}
+
+func TestHardwareSemPlacaAvisaCPU(t *testing.T) {
+	r, tc := ollamaCfg("translategemma:4b-it-q4_K_M") // sufixo de quantização também é reconhecido
+	cs := Run(context.Background(), Input{Work: t.TempDir(), Route: r, Translate: tc, Hardware: hwInfo(0, 16), Deps: fakeDeps()})
+	if levelOf(t, cs, "placa de vídeo") != Warn {
+		t.Fatalf("sem placa devia haver aviso: %+v", cs)
+	}
+	m := find(cs, "modelo do motor llm")
+	if len(m) != 1 || m[0].Level != Warn || !strings.Contains(m[0].Msg, "CPU") {
+		t.Fatalf("o modelo devia ser avisado como CPU: %+v", m)
+	}
+}
+
+func TestHardwareIgnoraMotoresQueNaoSaoOllama(t *testing.T) {
+	r := &route.Config{Default: "llm"}
+	tc := &translate.Config{Engines: map[string]translate.EngineConfig{
+		"llm": {Type: "openai", BaseURL: "http://127.0.0.1:8080/v1", Model: "translategemma:27b"},
+	}}
+	cs := Run(context.Background(), Input{Work: t.TempDir(), Route: r, Translate: tc, Hardware: hwInfo(8, 8), Deps: fakeDeps()})
+	if len(find(cs, "modelo do motor llm")) != 0 {
+		t.Fatalf("llama-server não é o Ollama: %+v", find(cs, "modelo do motor llm"))
+	}
+}
+
+func TestHardwarePlacaSemMedidaNaoViraNenhumaPlaca(t *testing.T) {
+	info := &hardware.Info{CPUCores: 8, RAMTotal: 16 << 30, RAMAvail: 16 << 30, UnknownGPUs: []string{"Intel (card1)"}}
+	r, tc := ollamaCfg("translategemma:4b")
+	cs := Run(context.Background(), Input{Work: t.TempDir(), Route: r, Translate: tc, Hardware: info, Deps: fakeDeps()})
+	placa := find(cs, "placa de vídeo")
+	if len(placa) != 1 || placa[0].Level != Warn {
+		t.Fatalf("devia haver um aviso sobre a placa: %+v", placa)
+	}
+	for _, want := range []string{"Intel (card1)", "não consegui medir", "llama-server --list-devices", "MTRAD_VRAM_GIB"} {
+		if !strings.Contains(placa[0].Msg, want) {
+			t.Errorf("o aviso devia citar %q: %s", want, placa[0].Msg)
+		}
+	}
+	for _, c := range find(cs, "computador") {
+		if strings.Contains(c.Msg, "nenhuma encontrada") || strings.Contains(c.Msg, "encontrei") {
+			t.Errorf("linha repetida ou errada em 'computador': %s", c.Msg)
+		}
+	}
+	if levelOf(t, cs, "modelo sugerido") != Warn {
+		t.Fatalf("sem medir a placa a sugestão é só um palpite: %+v", find(cs, "modelo sugerido"))
+	}
+	m := find(cs, "modelo do motor llm")
+	if len(m) != 1 || m[0].Level != Warn || !strings.Contains(m[0].Msg, "não consegui medir") {
+		t.Fatalf("o modelo configurado não pode ser dado como CPU nem como GPU: %+v", m)
+	}
+}
+
+func TestHardwareMemoriaInformadaVoltaAoNormal(t *testing.T) {
+	info := &hardware.Info{CPUCores: 8, RAMTotal: 16 << 30, RAMAvail: 16 << 30,
+		GPUs: []hardware.GPU{{Vendor: "manual", Name: "memória informada por você (MTRAD_VRAM_GIB)", Total: 12 << 30}}}
+	r, tc := ollamaCfg("translategemma:12b")
+	cs := Run(context.Background(), Input{Work: t.TempDir(), Route: r, Translate: tc, Hardware: info, Deps: fakeDeps()})
+	if len(find(cs, "placa de vídeo")) != 0 {
+		t.Fatalf("com a memória informada não devia haver aviso de placa: %+v", find(cs, "placa de vídeo"))
+	}
+	if levelOf(t, cs, "modelo do motor llm") != OK || levelOf(t, cs, "modelo sugerido") != OK {
+		t.Fatalf("12 GiB informados: o 12b (8,1) cabe: %+v", cs)
+	}
+}
+
+func TestHardwareAvisoDeVariavelInvalidaApareceComoAviso(t *testing.T) {
+	info := hwInfo(0, 16)
+	info.Warnings = []string{`MTRAD_VRAM_GIB="doze" não é um número de GiB entre 0 e 1024: ignorei`}
+	cs := Run(context.Background(), Input{Work: t.TempDir(), Hardware: info, Deps: fakeDeps()})
+	var got *Check
+	for i, c := range cs {
+		if c.Name == "computador" && strings.Contains(c.Msg, "ignorei") {
+			got = &cs[i]
+		}
+	}
+	if got == nil || got.Level != Warn {
+		t.Fatalf("o aviso devia ser nível 'aviso': %+v", got)
+	}
+	for _, c := range find(cs, "computador") {
+		if !strings.Contains(c.Msg, "ignorei") && c.Level != OK {
+			t.Errorf("só o aviso deve sair do 'ok': %+v", c)
+		}
 	}
 }

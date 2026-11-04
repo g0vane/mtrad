@@ -20,6 +20,7 @@ type Demo struct {
 	edits map[string]string
 	left  map[string]bool
 	saved *Setup
+	rate  Rate // andamento simulado da tradução
 }
 
 func (d *Demo) IsDemo() bool { return true }
@@ -73,6 +74,26 @@ func (d *Demo) resolved() int {
 
 func (*Demo) Models() []string {
 	return []string{"translategemma:4b", "gemma3:12b", "qwen3:8b"}
+}
+
+// Hardware na demonstração é o computador do autor: RX 580 de 8 GiB.
+func (*Demo) Hardware() Hardware {
+	return Hardware{
+		Lines: []string{
+			"memória do sistema: 15,6 GiB (livre 8,6 GiB)",
+			"processador: 8 núcleos",
+			"placa de vídeo: Radeon RX 580, 8,0 GiB, em uso 0,5 GiB, sobram 6,3 GiB para o modelo",
+		},
+		Options: []ModelOption{
+			{Name: "translategemma:4b", SizeGiB: 3.3, Fit: "cabe na placa de vídeo", Runs: true, Installed: true, Recommended: true},
+			{Name: "translategemma:12b", SizeGiB: 8.1, Fit: "parte na CPU (mais lento)", Runs: true},
+			{Name: "translategemma:27b", SizeGiB: 17, Fit: "não cabe"},
+			{Name: "gemma3:4b", SizeGiB: 3.4, Fit: "cabe na placa de vídeo", Runs: true},
+			{Name: "gemma3:12b", SizeGiB: 8.2, Fit: "parte na CPU (mais lento)", Runs: true, Installed: true},
+		},
+		Why:     "translategemma:4b é o maior modelo desta lista que cabe inteiro na sua placa de vídeo",
+		Checked: "2026-11-03",
+	}
 }
 
 func (*Demo) Prepare(context.Context) error { return nil }
@@ -197,6 +218,7 @@ func (d *Demo) Translate(ctx context.Context, limit int, install bool, progress 
 			return Outcome{}, ctx.Err()
 		case <-time.After(d.Delay):
 		}
+		d.setRate(total*i/steps, total)
 		progress(total*i/steps, total)
 	}
 	lines := []string{fmt.Sprintf("translate: %d traduzidos, 0 do cache, 0 falharam", total), "validate: simulado", "pack: simulado"}
@@ -204,6 +226,25 @@ func (d *Demo) Translate(ctx context.Context, limit int, install bool, progress 
 		lines = append(lines, "install: simulado")
 	}
 	return Outcome{Lines: lines}, nil
+}
+
+// Na demonstração cada texto tem 7 palavras e o motor faz 7,9 palavras por segundo.
+func (d *Demo) setRate(done, total int) {
+	const wordsPerText, wps = 7, 7.9
+	r := Rate{TotalWords: int64(total * wordsPerText), DoneWords: int64(done * wordsPerText), WordsPerSec: wps}
+	if left := r.TotalWords - r.DoneWords; left > 0 {
+		r.Remaining = time.Duration(float64(left) / wps * float64(time.Second))
+	}
+	r.RemainingKnown = true
+	d.mu.Lock()
+	d.rate = r
+	d.mu.Unlock()
+}
+
+func (d *Demo) Rate() Rate {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.rate
 }
 
 func (*Demo) Apply(context.Context) (Outcome, error) {

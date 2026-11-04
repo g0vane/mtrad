@@ -380,3 +380,133 @@ func TestMaintenanceVerifyPack(t *testing.T) {
 	out := runDemo(t, &Demo{Done: true}, keys("enter enter down down down down down down enter down down enter enter esc esc ctrlc"), 30, 140)
 	want(t, out, "Conferir o pacote montado", "nenhum problema", "Erro de carregamento", "mtrad verify")
 }
+
+func TestSetupMostraHardwareEModelosDoCatalogo(t *testing.T) {
+	out := runDemo(t, &Demo{}, keys("enter enter enter enter esc esc esc q"), 40, 120)
+	want(t, out,
+		"placa de vídeo: Radeon RX 580", // passo 1: o que foi medido
+		"é o maior modelo desta lista",  // passo 1 e 3: por que sugere
+		"translategemma:4b", "cabe na placa de vídeo", "recomendado",
+		"ollama pull translategemma:12b", // modelo do catálogo ainda não instalado
+		"Digitar outro nome…",
+	)
+	if strings.Contains(out, "translategemma:27b") {
+		t.Fatal("o 27b não roda neste computador e não devia ser oferecido")
+	}
+}
+
+func TestSetupModeloDigitadoChegaAoBackend(t *testing.T) {
+	d := &Demo{}
+	// boas-vindas, passo 1, passo 2 (ollama), passo 3: 5 modelos listados, 6ª linha = digitar
+	runDemo(t, d, keys("enter enter enter down down down down down enter t:qwen3:14b enter down down down enter enter enter enter q"), 40, 120)
+	got := d.Defaults()
+	if got.Engine != "ollama" || got.Model != "qwen3:14b" {
+		t.Fatalf("o modelo digitado não chegou ao backend: %+v", got)
+	}
+}
+
+func TestSetupModeloDigitadoRecusaVazioEEspaco(t *testing.T) {
+	d := &Demo{}
+	out := runDemo(t, d, keys("enter enter enter down down down down down enter enter t:dois_nomes enter esc esc esc esc q"), 40, 120)
+	want(t, out, "digite o nome do modelo", "o nome não pode ter espaço")
+	if m := d.Defaults().Model; m == "dois nomes" || m == "" {
+		t.Fatalf("nome inválido foi aceito: %q", m)
+	}
+}
+
+func TestOllamaChoices(t *testing.T) {
+	hw := Hardware{Options: []ModelOption{
+		{Name: "translategemma:4b", SizeGiB: 3.3, Fit: "cabe na placa de vídeo", Runs: true, Recommended: true},
+		{Name: "translategemma:12b", SizeGiB: 8.1, Fit: "parte na CPU (mais lento)", Runs: true},
+		{Name: "translategemma:27b", SizeGiB: 17, Fit: "não cabe"},
+	}}
+	// instalado com sufixo de quantização não aparece duas vezes
+	got := ollamaChoices([]string{"translategemma:4b-it-q4_K_M"}, hw, "")
+	names := []string{}
+	for _, c := range got {
+		names = append(names, c.name)
+	}
+	if strings.Join(names, ",") != "translategemma:4b-it-q4_K_M,translategemma:12b" {
+		t.Fatalf("lista errada: %v", names)
+	}
+	if !strings.Contains(got[0].hint, "instalado") || !strings.Contains(got[0].hint, "recomendado") {
+		t.Fatalf("dica do instalado: %q", got[0].hint)
+	}
+	if !strings.Contains(got[1].hint, "não instalado") || !strings.Contains(got[1].hint, "ollama pull translategemma:12b") {
+		t.Fatalf("dica do não instalado: %q", got[1].hint)
+	}
+	// Ollama parado (nada instalado conhecido): não diz "não instalado"
+	got = ollamaChoices(nil, hw, "")
+	if strings.Contains(got[0].hint, "não instalado") {
+		t.Fatalf("com o Ollama parado não dá para afirmar que não está instalado: %q", got[0].hint)
+	}
+	// modelo da configuração que não está em nenhuma lista fica no topo
+	got = ollamaChoices(nil, hw, "meu-modelo:7b")
+	if got[0].name != "meu-modelo:7b" {
+		t.Fatalf("o modelo atual foi perdido: %v", got)
+	}
+	// sem nada, cai no padrão
+	got = ollamaChoices(nil, Hardware{}, "")
+	if len(got) != 1 || got[0].name != defaultModel("ollama") {
+		t.Fatalf("lista vazia deveria cair no padrão: %v", got)
+	}
+}
+
+func TestSetupNuvemPedeONomeDoModeloEAvisa(t *testing.T) {
+	d := &Demo{}
+	// boas-vindas, passo 1, passo 2 (5 × baixo = openai), passo 3: digita o modelo
+	out := runDemo(t, d, keys("enter enter down down down down down enter enter t:modelo-x enter down down down enter enter enter enter q"), 40, 120)
+	want(t, out, "API da OpenAI", "exporte OPENAI_API_KEY", "api.openai.com", "digite o nome do modelo")
+	got := d.Defaults()
+	if got.Engine != "openai" || got.Model != "modelo-x" {
+		t.Fatalf("o modelo de nuvem não chegou ao backend: %+v", got)
+	}
+}
+
+func TestSetupNuvemNaoAceitaNomeComEspaco(t *testing.T) {
+	d := &Demo{}
+	out := runDemo(t, d, keys("enter enter down down down down down down enter t:dois_nomes enter esc esc esc esc q"), 40, 120)
+	want(t, out, "exporte OPENROUTER_API_KEY", "openrouter.ai", "o nome não pode ter espaço")
+	if m := d.Defaults().Model; strings.Contains(m, " ") {
+		t.Fatalf("nome inválido foi aceito: %q", m)
+	}
+}
+
+func TestSetupGeminiTambemAceitaOutroNome(t *testing.T) {
+	d := &Demo{}
+	// passo 2: gemini (2 × baixo); passo 3: lista com 2 nomes e a linha de digitar (índice 2)
+	runDemo(t, d, keys("enter enter down down enter down down enter t:gemini-novo enter down down down enter enter enter enter q"), 40, 120)
+	if got := d.Defaults(); got.Engine != "gemini" || got.Model != "gemini-novo" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestProgressoMostraTempoEPalavrasPorSegundo(t *testing.T) {
+	d := &Demo{Done: true}
+	var out bytes.Buffer
+	u := New(keys("enter"), &out, d, "t", false, false, func() (int, int) { return 30, 100 })
+	d.setRate(5000, 17031)
+	lines := strings.Join(u.progressFrame(5000, 17031, 12*time.Minute+4*time.Second, d.Rate(), false, false), "\n")
+	want(t, lines, "29%", "12 min 04 s decorridos", "faltam ~", "7,9 palavras/s")
+	// sem medida ainda: nada de velocidade nem previsão inventadas
+	lines = strings.Join(u.progressFrame(0, 100, time.Second, Rate{}, false, false), "\n")
+	if strings.Contains(lines, "palavras/s") || strings.Contains(lines, "faltam") {
+		t.Fatalf("não devia mostrar velocidade nem previsão sem medida:\n%s", lines)
+	}
+	// no fim: quanto levou, sem "faltam"
+	d.setRate(17031, 17031)
+	lines = strings.Join(u.progressFrame(17031, 17031, 40*time.Minute, d.Rate(), false, true), "\n")
+	want(t, lines, "levou 40 min 00 s", "100%")
+	if strings.Contains(lines, "faltam") {
+		t.Fatalf("no fim não falta nada:\n%s", lines)
+	}
+}
+
+func TestSetupLlamaCppTambemRecebeASugestaoDeTamanho(t *testing.T) {
+	// boas-vindas, passo 1, passo 2 (llama = 1 × baixo), passo 3
+	out := runDemo(t, &Demo{}, keys("enter enter down enter esc esc esc q"), 40, 120)
+	want(t, out, "O motor llama usa o modelo do próprio serviço", "é o maior modelo desta lista", "arquivo GGUF")
+	if strings.Contains(out, "ollama pull translategemma:12b") {
+		t.Fatal("no llama.cpp não se usa `ollama pull`")
+	}
+}

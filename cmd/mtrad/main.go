@@ -14,14 +14,17 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"mtrad/internal/activate"
 	"mtrad/internal/diff"
 	"mtrad/internal/doctor"
 	"mtrad/internal/evalset"
 	"mtrad/internal/extract"
+	"mtrad/internal/fmtx"
 	"mtrad/internal/ftbq"
 	"mtrad/internal/glossary"
+	"mtrad/internal/hardware"
 	"mtrad/internal/install"
 	"mtrad/internal/pack"
 	"mtrad/internal/patchouli"
@@ -55,8 +58,9 @@ etapas, na ordem:
   run        -i PASTA -c CONFIG [--install [--overwrite]] [--activate]  todas as etapas em sequência
   activate   [--no-lang] [--dry-run] [--force]   liga o pacote e o idioma pt_br no options.txt (com o jogo fechado)
   verify     [--pack ARQ.zip]        confere o pacote montado contra os originais (documentos do Patchouli, chaves de idioma, pack.mcmeta)
-  init       [-i PASTA] [-o ARQ] [--engine llama|ollama|gemini|libre|ct2]   cria o arquivo de configuração (sem -i não lê instância)
+  init       [-i PASTA] [-o ARQ] [--engine llama|ollama|gemini|openai|openrouter|custom|libre|ct2] [--fallback gemini|openai|openrouter]   cria o arquivo de configuração (sem -i não lê instância)
   doctor     [-c CONFIG]             confere o ambiente e diz o que falta
+  bench      -c CONFIG [--engine NOME] [-n 12] [--words N] [--allow-cloud]   mede palavras por segundo e estima o tempo da tradução
   evalset    -o PASTA [-n 500] [--seed S]   cria um conjunto de teste com traduções humanas
   logs       [-n N]                  resume o registro da última execução (ou da N-ésima anterior)
   unlock                             remove a trava de uma execução que caiu
@@ -358,17 +362,31 @@ func dispatch(ctx context.Context, cmd string, args []string) error {
 			return err
 		}
 		return stageDoctor(ctx, c.work, c.config)
+	case "bench":
+		fs := newFlags(cmd, &c)
+		only := fs.String("engine", "", "mede só este motor (nome em translate.engines)")
+		n := fs.Int("n", 12, "quantas frases de exemplo traduzir (2 a 32)")
+		words := fs.Int64("words", 0, "palavras do seu modpack, para estimar o tempo (padrão: o que falta em -w, se houver)")
+		cloud := fs.Bool("allow-cloud", false, "mede também motores fora do computador (envia frases de exemplo; pode ser cobrado)")
+		if err := parse(fs, args); err != nil {
+			return err
+		}
+		return stageBench(ctx, os.Stdout, c.config, *only, *n, *words, *words > 0, *cloud, c.work)
 	case "init":
 		fs := newFlags(cmd, &c)
 		inst := fs.String("i", "", "pasta da instância do Prism (opcional no init)")
 		out := fs.String("o", "mtrad.json", "arquivo de configuração a criar")
-		engine := fs.String("engine", "llama", "llama, ollama, gemini, libre ou ct2")
+		engine := fs.String("engine", "llama", "llama, ollama, gemini, openai, openrouter, custom, libre ou ct2")
 		model := fs.String("model", "", "nome do modelo (o padrão depende do motor)")
+		baseURL := fs.String("base-url", "", "endereço do servidor (só no motor custom)")
+		keyEnv := fs.String("api-key-env", "", "NOME da variável de ambiente com a chave da API (só no motor custom); nunca a chave")
+		fallback := fs.String("fallback", "", "motor de nuvem reserva: gemini, openai ou openrouter (os textos que o principal não traduzir vão para ele)")
+		fallbackModel := fs.String("fallback-model", "", "modelo do motor reserva")
 		overwrite := fs.Bool("overwrite", false, "substitui o arquivo se já existir")
 		if err := parse(fs, args); err != nil {
 			return err
 		}
-		return stageInit(*inst, *out, *engine, *model, *overwrite)
+		return stageInitOpts(*inst, *out, initOpts{Engine: *engine, Model: *model, BaseURL: *baseURL, APIKeyEnv: *keyEnv, Fallback: *fallback, FallbackModel: *fallbackModel}, *overwrite)
 	case "run":
 		fs := newFlags(cmd, &c)
 		inst := fs.String("i", "", "pasta da instância do Prism")
@@ -685,7 +703,8 @@ func stageActivate(w io.Writer, work string, cfg Config, setLang, dry, force boo
 }
 
 func stageDoctor(ctx context.Context, work, config string) error {
-	in := doctor.Input{Work: work, Deps: doctor.DefaultDeps()}
+	hw := hardware.Detect(ctx, hardware.DefaultDeps())
+	in := doctor.Input{Work: work, Deps: doctor.DefaultDeps(), Hardware: &hw}
 	if config != "" {
 		cfg, err := loadConfig(config)
 		if err != nil {
@@ -791,15 +810,19 @@ func runStageCtx(ctx context.Context, name, work string, cfg Config) error {
 		}
 		fmt.Printf("route: %v\n", counts)
 	case "translate":
-		last := 0
+		var lastPrint time.Time
 		cfg.Translate.RequestLog = runlog.RequestsPath()
 		cfg.Translate.Notice = func(m string) { fmt.Println(m) }
+		if cfg.Translate.Meter == nil {
+			cfg.Translate.Meter = translate.NewMeter()
+		}
+		meter := cfg.Translate.Meter
 		report := cfg.progress
 		if report == nil {
 			report = func(done, total int) {
-				if done-last >= 200 || done == total {
-					last = done
-					fmt.Fprintf(os.Stderr, "\r  traduzidos %d de %d", done, total)
+				if time.Since(lastPrint) >= time.Second || done == total {
+					lastPrint = time.Now()
+					fmt.Fprintf(os.Stderr, "\r\x1b[K%s", progressLine(done, total, meter.Snapshot()))
 				}
 			}
 		}
@@ -815,6 +838,9 @@ func runStageCtx(ctx context.Context, name, work string, cfg Config) error {
 			return err
 		}
 		fmt.Printf("translate: %d traduzidos, %d do cache, %d falharam\n", st.Translated, st.CacheHits, st.Failed)
+		if r := meter.Snapshot(); r.Elapsed > 0 && r.EngineWords > 0 {
+			fmt.Printf("  %d palavras em %s (%s palavras/s)\n", r.EngineWords, fmtx.Duration(r.Elapsed), fmtx.Decimal1(r.WordsPerSec))
+		}
 		for from, n := range st.Fallback {
 			fmt.Printf("  %d textos do motor %s foram para o motor reserva\n", n, from)
 		}

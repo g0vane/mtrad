@@ -70,6 +70,7 @@ type Options struct {
 	Backoff  time.Duration
 	Progress func(done, total int)
 	ReqLog   func(ReqRec) // pode ser nil
+	Meter    *Meter       // mede palavras por segundo e o tempo que falta; pode ser nil
 
 	cacheFail *int64 // gravações do cache que falharam (preenchido em Execute)
 }
@@ -99,6 +100,12 @@ func Execute(ctx context.Context, jobs []Job, o Options) (Stats, error) {
 	o.cacheFail = new(int64)
 	var done int64
 	total := len(jobs)
+	var words int64
+	for _, j := range jobs {
+		words += int64(CountWords(j.Masked))
+	}
+	o.Meter.begin(words)
+	defer o.Meter.stop()
 
 	failed, left := o.pass(ctx, jobs, &st, &done, total, true)
 	for depth := 0; depth < maxFallbackDepth && ctx.Err() == nil; depth++ {
@@ -293,6 +300,7 @@ func (o Options) runBatch(ctx context.Context, er EngineRun, batch []Job) batchR
 				}
 				o.logReq(ReqRec{ID: j.ID, Engine: eng.Name(), Model: eng.Model(), Cache: true})
 				res.hits++
+				o.Meter.addCached(CountWords(j.Masked))
 				continue
 			}
 		}
@@ -415,6 +423,7 @@ func (o Options) runPending(ctx context.Context, er EngineRun, pending []Item, a
 				}
 			}
 			translated++
+			o.Meter.addTranslated(CountWords(it.Text))
 		}
 		pending = retry
 		if len(pending) > 0 {

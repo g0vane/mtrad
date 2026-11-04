@@ -14,10 +14,12 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"mtrad/internal/diff"
 	"mtrad/internal/doctor"
+	"mtrad/internal/hardware"
 	"mtrad/internal/install"
 	"mtrad/internal/pack"
 	"mtrad/internal/review"
@@ -59,6 +61,15 @@ type uiBackend struct {
 	pmu      sync.Mutex // sondagem do Ollama
 	probeAt  time.Time
 	probeVal ollamaState
+
+	// meter mede a tradução em curso (palavras por segundo e tempo que falta).
+	meter atomic.Pointer[translate.Meter]
+
+	hmu   sync.Mutex // medição do hardware (vale por 30 s)
+	hwAt  time.Time
+	hwVal hardware.Info
+	// hwDetect troca a medição do hardware nos testes (nil = o computador de verdade).
+	hwDetect func() hardware.Info
 
 	// ollamaBase troca a URL do Ollama nos testes ("" = a da configuração).
 	ollamaBase string
@@ -151,6 +162,10 @@ func engineKind(ec translate.EngineConfig) string {
 	switch {
 	case strings.Contains(ec.BaseURL, "generativelanguage"):
 		return "gemini"
+	case strings.Contains(ec.BaseURL, "api.openai.com"):
+		return "openai"
+	case strings.Contains(ec.BaseURL, "openrouter.ai"):
+		return "openrouter"
 	case strings.Contains(ec.BaseURL, ":11434"):
 		return "ollama"
 	}
@@ -228,7 +243,7 @@ func (b *uiBackend) SaveSetup(s ui.Setup) error {
 			if err := setKey(m, "route.default", name); err != nil {
 				return err
 			}
-			if err := setKey(m, "translate.engines."+name, ecMap); err != nil {
+			if err := setEngine(m, name, ecMap); err != nil {
 				return err
 			}
 			if allOn {
@@ -252,6 +267,35 @@ func (b *uiBackend) SaveSetup(s ui.Setup) error {
 		return fmt.Errorf("gravei %s, mas ele não passou na conferência: %v", path, b.cfgErr)
 	}
 	return nil
+}
+
+// setEngine grava o motor escolhido no setup sem apagar o que o usuário ajustou
+// à mão. Se o motor é o mesmo (mesmo tipo e mesmo endereço), só o modelo muda:
+// fallback, workers, limites e o resto ficam. Se o motor mudou, a entrada é
+// trocada, mas o fallback continua valendo quando o motor reserva ainda existe
+// (e não aponta de volta para este, o que formaria um ciclo).
+func setEngine(m map[string]any, name string, fresh map[string]any) error {
+	key := "translate.engines." + name
+	cur, _ := getKey(m, key)
+	curMap, isMap := cur.(map[string]any)
+	if isMap && curMap["type"] == fresh["type"] && curMap["base_url"] == fresh["base_url"] {
+		if mv, ok := fresh["model"]; ok {
+			curMap["model"] = mv
+		} else {
+			delete(curMap, "model")
+		}
+		return nil
+	}
+	if isMap {
+		if fb, ok := curMap["fallback"].(string); ok && fb != "" && fb != name {
+			if target, err := getKey(m, "translate.engines."+fb); err == nil {
+				if tm, ok := target.(map[string]any); ok && tm["fallback"] != name {
+					fresh["fallback"] = fb
+				}
+			}
+		}
+	}
+	return setKey(m, key, fresh)
 }
 
 // editCfg aplica uma alteração ao mtrad.json e o relê.
@@ -560,7 +604,51 @@ func (b *uiBackend) Models() []string {
 	return b.probeOllama(model, true).models
 }
 
+// hardwareInfo mede o computador; o resultado vale por 30 s (a tela do setup
+// pede várias vezes e o nvidia-smi não é de graça).
+func (b *uiBackend) hardwareInfo() hardware.Info {
+	b.hmu.Lock()
+	defer b.hmu.Unlock()
+	if !b.hwAt.IsZero() && time.Since(b.hwAt) < 30*time.Second {
+		return b.hwVal
+	}
+	if b.hwDetect != nil {
+		b.hwVal = b.hwDetect()
+	} else {
+		b.hwVal = hardware.Detect(context.Background(), hardware.DefaultDeps())
+	}
+	b.hwAt = time.Now()
+	return b.hwVal
+}
+
+// Rate devolve o andamento em palavras da tradução em curso (ou da última).
+func (b *uiBackend) Rate() ui.Rate {
+	r := b.meter.Load().Snapshot() // Snapshot de medidor nil devolve tudo zero
+	return ui.Rate{TotalWords: r.TotalWords, DoneWords: r.DoneWords, WordsPerSec: r.WordsPerSec, Remaining: r.Remaining, RemainingKnown: r.RemainingKnown}
+}
+
+func (b *uiBackend) Hardware() ui.Hardware {
+	info := b.hardwareInfo()
+	b.mu.Lock()
+	model := b.cfgModel()
+	b.mu.Unlock()
+	installed := b.probeOllama(model, false).models
+	rec := hardware.Recommend(info, hardware.Catalog, installed)
+	h := ui.Hardware{Lines: info.Lines(), Why: rec.Why, Checked: hardware.CatalogChecked}
+	for _, o := range rec.Options {
+		h.Options = append(h.Options, ui.ModelOption{
+			Name: o.Model.ID, SizeGiB: o.Model.SizeGiB, Fit: o.Fit.String(), Runs: o.Fit != hardware.FitNone,
+			Installed: o.Installed, Recommended: rec.Best != nil && rec.Best.Model.ID == o.Model.ID,
+		})
+	}
+	return h
+}
+
 func (b *uiBackend) Doctor() []ui.Check {
+	// "Verificar de novo" mede o computador outra vez.
+	b.hmu.Lock()
+	b.hwAt = time.Time{}
+	b.hmu.Unlock()
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var out []ui.Check
@@ -847,6 +935,9 @@ func (b *uiBackend) Translate(ctx context.Context, limit int, installFiles bool,
 	b.mu.Unlock()
 	cfg.Translate.Limit = limit
 	cfg.progress = progress
+	m := translate.NewMeter()
+	cfg.Translate.Meter = m
+	b.meter.Store(m)
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		return ui.Outcome{}, err
 	}

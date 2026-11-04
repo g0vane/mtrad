@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"mtrad/internal/install"
 	"mtrad/internal/pack"
@@ -485,5 +486,20 @@ func TestActivateAcceptsItsOwnForceAndDryRun(t *testing.T) {
 		if err == nil {
 			t.Fatalf("activate %v sem instância devia falhar", args)
 		}
+	}
+}
+
+func TestProgressLine(t *testing.T) {
+	r := translate.Rate{Elapsed: 12*time.Minute + 4*time.Second, WordsPerSec: 7.94, Remaining: 28 * time.Minute, RemainingKnown: true}
+	got := progressLine(5100, 17031, r)
+	for _, want := range []string{"traduzidos 5100 de 17031", "12 min 04 s decorridos", "7,9 palavras/s", "faltam ~28 min 00 s"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("faltou %q em %q", want, got)
+		}
+	}
+	// no começo, sem velocidade nem previsão: só o que se sabe
+	got = progressLine(0, 100, translate.Rate{Elapsed: time.Second})
+	if strings.Contains(got, "palavras/s") || strings.Contains(got, "faltam") {
+		t.Errorf("não devia inventar velocidade nem previsão: %q", got)
 	}
 }

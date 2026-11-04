@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"mtrad/internal/fmtx"
 )
 
 // Run abre o menu inicial e fica nele até o usuário sair.
@@ -103,6 +105,7 @@ func (u *UI) stepEnv() nav {
 				bad++
 			}
 		}
+		hw := u.be.Hardware()
 		items := []Item{{Label: "Continuar"}}
 		if bad > 0 {
 			inst := Item{Label: "Instalar agora", Hint: "pede confirmação; a senha é do sudo"}
@@ -117,6 +120,15 @@ func (u *UI) stepEnv() nav {
 				head = append(head, fmt.Sprintf("  %s %s  %s", u.checkMark(c), pad(c.Name, 40), u.dim(c.Detail)))
 			}
 			head = append(head, "")
+			for _, l := range hw.Lines {
+				head = append(head, "  "+u.dim("·")+" "+l)
+			}
+			if hw.Why != "" {
+				head = append(head, "  "+u.ok("→")+" "+hw.Why)
+			}
+			if len(hw.Lines) > 0 {
+				head = append(head, "")
+			}
 			if bad == 0 {
 				head = append(head, "  "+u.ok("✓")+" tudo certo com o Ollama, o modelo e a placa de vídeo.")
 			} else {
@@ -177,6 +189,8 @@ var engineInfo = []struct{ name, desc string }{
 	{"gemini", "API do Google (grátis com limite; precisa de chave)"},
 	{"libre", "LibreTranslate local (qualidade menor)"},
 	{"ct2", "tradutor neural em CPU (lento, precisa de Python)"},
+	{"openai", "API da OpenAI (paga; precisa de chave e do nome do modelo)"},
+	{"openrouter", "um endereço para vários modelos (precisa de chave e do nome do modelo)"},
 }
 
 func (u *UI) stepEngine() nav {
@@ -213,15 +227,27 @@ func defaultModel(engine string) string {
 		return "translategemma:4b"
 	case "gemini":
 		return "gemini-2.0-flash"
+	case "openai", "openrouter":
+		return "" // nomes de modelo de nuvem mudam: quem escolhe é o usuário
 	}
 	return "padrão do motor"
 }
 
 func (u *UI) stepModel() nav {
+	if _, ok := cloudHosts[u.st.Engine]; ok {
+		return u.stepCloudModel()
+	}
 	if u.st.Engine != "ollama" && u.st.Engine != "gemini" {
 		_, ok := u.pick(Pick{Build: func() Layout {
 			head := u.stepHead(3, "Escolher o modelo")
 			head = append(head, "  O motor "+u.st.Engine+" usa o modelo do próprio serviço.", "")
+			if u.st.Engine == "llama" {
+				// o llama-server usa o arquivo GGUF que você carregou; a sugestão de tamanho vale igual
+				if hw := u.be.Hardware(); hw.Why != "" {
+					head = append(head, "  "+u.ok("→")+" "+hw.Why,
+						"  "+u.dim("Escolha um arquivo GGUF que caiba na sua placa. Os tamanhos da lista são os do Ollama: confira o tamanho do arquivo."), "")
+				}
+			}
 			return Layout{Head: head, Items: []Item{{Label: "Continuar"}}}
 		}})
 		if !ok {
@@ -229,21 +255,20 @@ func (u *UI) stepModel() nav {
 		}
 		return next
 	}
-	type m struct{ name, hint string }
+	type m = modelChoice
 	var ms []m
+	var hw Hardware
+	custom := false // a última linha da lista deixa digitar outro nome
 	if u.st.Engine == "ollama" {
-		for k, name := range u.be.Models() {
-			h := "instalado"
-			if k == 0 && name == defaultModel("ollama") {
-				h += " · recomendado (3,3 GB)"
-			}
-			ms = append(ms, m{name, h})
-		}
-		if len(ms) == 0 { // Ollama parado ou sem modelos: mostra o padrão, avisando
-			ms = append(ms, m{defaultModel("ollama"), "não instalado ou Ollama parado · depois: ollama pull " + defaultModel("ollama")})
-		}
+		custom = true
+		hw = u.be.Hardware()
+		ms = ollamaChoices(u.be.Models(), hw, u.st.Model)
 	} else {
+		custom = true
 		ms = []m{{"gemini-2.0-flash", "precisa de GEMINI_API_KEY"}, {"gemini-2.5-flash-lite", "precisa de GEMINI_API_KEY"}}
+		if cur := u.st.Model; cur != "" && cur != "padrão do motor" && cur != ms[0].name && cur != ms[1].name {
+			ms = append([]m{{cur, "o que já está na configuração"}}, ms...)
+		}
 	}
 	start := 0
 	for k, x := range ms {
@@ -256,6 +281,13 @@ func (u *UI) stepModel() nav {
 		if u.st.Engine == "gemini" {
 			head = append(head, "  "+u.warn("!")+" exporte GEMINI_API_KEY antes de traduzir; o limite grátis é do Google.", "")
 		}
+		if hw.Why != "" {
+			head = append(head, "  "+u.ok("→")+" "+hw.Why)
+			if hw.Checked != "" {
+				head = append(head, "  "+u.dim("tamanhos conferidos em "+hw.Checked+"; a lista não é completa: use a última linha para outro modelo"))
+			}
+			head = append(head, "")
+		}
 		var its []Item
 		for _, x := range ms {
 			mk := "○"
@@ -264,13 +296,133 @@ func (u *UI) stepModel() nav {
 			}
 			its = append(its, Item{Mark: mk, Label: x.name, Hint: x.hint})
 		}
+		if custom {
+			its = append(its, Item{Mark: "○", Label: "Digitar outro nome…", Hint: otherHint(u.st.Engine)})
+		}
 		return Layout{Head: head, Items: its}
 	}})
 	if !ok {
 		return u.escNav()
 	}
+	if i >= len(ms) { // "Digitar outro nome…"
+		name, ok := u.input(append(u.stepHead(3, "Escolher o modelo"), "  "+otherPrompt(u.st.Engine)), "", func(s string) (string, bool) {
+			s = strings.TrimSpace(s)
+			switch {
+			case s == "":
+				return "digite o nome do modelo", false
+			case strings.ContainsAny(s, " \t"):
+				return "o nome não pode ter espaço", false
+			}
+			return "", false
+		})
+		if !ok {
+			return u.escNav()
+		}
+		u.st.Model = strings.TrimSpace(name)
+		return next
+	}
 	u.st.Model = ms[i].name
 	return next
+}
+
+// cloudHosts são os provedores de nuvem do setup: para onde os textos vão e
+// o nome da variável de ambiente da chave. Espelha cloudPresets em cmd/mtrad.
+var cloudHosts = map[string]struct{ host, env string }{
+	"openai":     {"api.openai.com", "OPENAI_API_KEY"},
+	"openrouter": {"openrouter.ai", "OPENROUTER_API_KEY"},
+}
+
+func otherHint(engine string) string {
+	if engine == "ollama" {
+		return "qualquer modelo que o `ollama list` mostre"
+	}
+	return "o nome do modelo na sua conta"
+}
+
+func otherPrompt(engine string) string {
+	if engine == "ollama" {
+		return "Nome do modelo, como o `ollama list` mostra (exemplo: gemma3:12b):"
+	}
+	return "Nome do modelo na sua conta:"
+}
+
+// stepCloudModel pede o nome do modelo de um provedor de nuvem. Não há lista:
+// os nomes mudam e o mtrad não os conhece de antemão.
+func (u *UI) stepCloudModel() nav {
+	c := cloudHosts[u.st.Engine]
+	head := u.stepHead(3, "Escolher o modelo")
+	head = append(head,
+		"  "+u.warn("!")+" exporte "+c.env+" antes de traduzir; o mtrad só guarda o NOME da variável.",
+		"  "+u.warn("!")+" os textos dos mods serão enviados para "+c.host+" e o provedor pode cobrar.",
+		"", "  Nome do modelo na sua conta (a lista está no site do provedor):")
+	name, ok := u.input(head, u.st.Model, func(s string) (string, bool) {
+		s = strings.TrimSpace(s)
+		switch {
+		case s == "":
+			return "digite o nome do modelo", false
+		case strings.ContainsAny(s, " \t"):
+			return "o nome não pode ter espaço", false
+		}
+		return "", false
+	})
+	if !ok {
+		return u.escNav()
+	}
+	u.st.Model = strings.TrimSpace(name)
+	return next
+}
+
+// modelChoice é uma linha da lista de modelos.
+type modelChoice struct{ name, hint string }
+
+// ollamaChoices junta os modelos instalados com os do catálogo que rodam neste
+// computador (com a dica de onde cada um cabe) e, se a configuração tem um
+// modelo fora das duas listas, o mantém no topo para não ser perdido.
+func ollamaChoices(installed []string, hw Hardware, current string) []modelChoice {
+	type m = modelChoice
+	opt := func(name string) (ModelOption, bool) {
+		for _, o := range hw.Options {
+			if o.Name == name || strings.HasPrefix(name, o.Name+"-") {
+				return o, true
+			}
+		}
+		return ModelOption{}, false
+	}
+	var out []m
+	seen := map[string]bool{}
+	for _, name := range installed {
+		h := "instalado"
+		if o, ok := opt(name); ok {
+			h += " · " + o.Fit
+			if o.Recommended {
+				h += " · recomendado"
+			}
+			seen[o.Name] = true
+		}
+		seen[name] = true
+		out = append(out, m{name, h})
+	}
+	for _, o := range hw.Options {
+		if seen[o.Name] || !o.Runs {
+			continue
+		}
+		h := fmt.Sprintf("ollama pull %s · %s GB · %s", o.Name, strings.Replace(fmt.Sprintf("%.1f", o.SizeGiB), ".", ",", 1), o.Fit)
+		if len(installed) > 0 {
+			h = "não instalado · " + h
+		}
+		if o.Recommended {
+			h += " · recomendado"
+		}
+		out = append(out, m{o.Name, h})
+		seen[o.Name] = true
+	}
+	if current != "" && current != "padrão do motor" && !seen[current] {
+		out = append([]m{{current, "o que já está na configuração"}}, out...)
+	}
+	if len(out) == 0 {
+		out = append(out, m{defaultModel("ollama"), "ollama pull " + defaultModel("ollama")})
+	}
+	return out
 }
 
 func (u *UI) stepSources() nav {
@@ -697,7 +849,7 @@ func (u *UI) translateOnce(limit int, install bool) (resume bool) {
 loop:
 	for {
 		d, t := atomic.LoadInt64(&done), atomic.LoadInt64(&total)
-		u.draw(u.progressFrame(d, t, time.Since(start), paused, false))
+		u.draw(u.progressFrame(d, t, time.Since(start), u.be.Rate(), paused, false))
 		select {
 		case res = <-finished:
 			break loop
@@ -711,7 +863,7 @@ loop:
 		}
 	}
 	d, t := atomic.LoadInt64(&done), atomic.LoadInt64(&total)
-	lines := u.progressFrame(d, t, time.Since(start), false, true)
+	lines := u.progressFrame(d, t, time.Since(start), u.be.Rate(), false, true)
 	switch {
 	case paused:
 		lines = append(lines, "", "  "+u.warn("!")+" pausado. O que já foi traduzido está guardado.")
@@ -793,21 +945,31 @@ func (u *UI) runBusy(title string, fn func(ctx context.Context) error) error {
 	}
 }
 
-func (u *UI) progressFrame(done, total int64, el time.Duration, paused, final bool) []string {
+func (u *UI) progressFrame(done, total int64, el time.Duration, rate Rate, paused, final bool) []string {
 	const w = 30
 	var pct int64
 	if total > 0 {
 		pct = done * 100 / total
 	}
 	f := int(pct) * w / 100
-	rate := ""
-	if el > 2*time.Second && done > 0 {
-		perMin := float64(done) / el.Minutes()
-		rate = fmt.Sprintf("ritmo %.0f/min", perMin)
-	}
 	lines := []string{"", " " + u.bold("Traduzindo…"), "", fmt.Sprintf("  [%s%s] %d/%d  %d%%", strings.Repeat("█", f), strings.Repeat("░", w-f), done, total, pct)}
-	if rate != "" {
-		lines = append(lines, "  "+u.dim(rate+" · "+u.gpuTextPlain()))
+	// o tempo que passou e, no ritmo atual, o que falta
+	timing := "  " + fmtx.Duration(el) + " decorridos"
+	if final {
+		timing = "  levou " + fmtx.Duration(el)
+	} else if rate.RemainingKnown && rate.Remaining > 0 {
+		timing += " · faltam ~" + fmtx.Duration(rounded(rate.Remaining))
+	}
+	lines = append(lines, u.dim(timing))
+	var parts []string
+	if rate.WordsPerSec > 0 {
+		parts = append(parts, fmtx.Decimal1(rate.WordsPerSec)+" palavras/s")
+	}
+	if el > 2*time.Second && done > 0 {
+		parts = append(parts, fmt.Sprintf("%.0f textos/min", float64(done)/el.Minutes()))
+	}
+	if len(parts) > 0 {
+		lines = append(lines, "  "+u.dim(strings.Join(parts, " · ")+" · "+u.gpuTextPlain()))
 	}
 	if final {
 		return lines
@@ -818,6 +980,15 @@ func (u *UI) progressFrame(done, total int64, el time.Duration, paused, final bo
 		lines = append(lines, "", "  "+u.dim("Esc pausa; rodar de novo retoma."))
 	}
 	return lines
+}
+
+// rounded arredonda uma previsão: acima de 10 min para o minuto, para a
+// previsão não ficar tremendo a cada quadro.
+func rounded(d time.Duration) time.Duration {
+	if d >= 10*time.Minute {
+		return d.Round(time.Minute)
+	}
+	return d
 }
 
 func (u *UI) gpuTextPlain() string {

@@ -29,6 +29,8 @@ type Config struct {
 	Limit  int          `json:"-"` // só traduz os N primeiros (teste)
 	// RequestLog: arquivo onde cada pedido ao motor vira uma linha (vazio = não registra)
 	RequestLog string `json:"-"`
+	// Meter mede palavras por segundo e o tempo que falta (nil = não mede).
+	Meter *Meter `json:"-"`
 }
 
 // Validate confere as referências entre motores: reserva e motor de nova
@@ -236,7 +238,7 @@ func Run(ctx context.Context, workDir string, cfg Config, errs Sink, progress fu
 	}
 	st, err = Execute(ctx, jobs, Options{
 		Engines: engines, Cache: cache, Gloss: gl, Style: style, Out: out, Errs: errs,
-		Retries: cfg.Retries, Backoff: backoffOf(cfg), Progress: progress, ReqLog: reqLog,
+		Retries: cfg.Retries, Backoff: backoffOf(cfg), Progress: progress, ReqLog: reqLog, Meter: cfg.Meter,
 	})
 	st.Skipped, st.Stale, st.Retried = skipped, stale, retried
 	for _, er := range engines {
