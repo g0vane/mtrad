@@ -169,6 +169,10 @@ type ReusedRec struct {
 type Token struct {
 	T   string `json:"t"`   // marca no texto protegido
 	Raw string `json:"raw"` // trecho original
+	// Class diz que tipo de marca é (placeholder, style, reset, tag-open...;
+	// ver o pacote protect). Vazio em arquivos feitos antes de existir o campo.
+	// Nada no pipeline decide com base nela ainda: é só informação.
+	Class string `json:"class,omitempty"`
 }
 
 type ProtectedRec struct {

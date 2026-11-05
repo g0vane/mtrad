@@ -94,21 +94,97 @@ func ValidStyle(s string) bool {
 // Mask devolve o texto com marcas e o mapa de volta.
 func Mask(text, style string) (string, []schema.Token) { return MaskKind(text, style, "") }
 
+// Classes de marca. Dizem o que a marca faz no texto, para quem precisar
+// decidir diferente por tipo (hoje ninguém decide: MaskKind trata todas igual).
+const (
+	ClassPlaceholder = "placeholder" // %s %d %1$s {0} {nome}: carrega um valor
+	ClassStyle       = "style"       // §a §l &6 &#RRGGBB: abre cor ou estilo
+	ClassReset       = "reset"       // §r &r: volta ao estilo padrão
+	ClassTagOpen     = "tag-open"    // <b>
+	ClassTagClose    = "tag-close"   // </b>
+	ClassTagVoid     = "tag-void"    // <br/> <lang:key/>
+	ClassMacro       = "macro"       // $(l:...) e outras macros do Patchouli
+	ClassBreak       = "break"       // quebra de linha, \n escrito, $(br), {@pagebreak}
+	ClassURL         = "url"         // https://...
+	ClassCommand     = "command"     // {image:...} {open_url:...} do FTB Quests
+)
+
+// Mark é uma marca achada no texto: onde fica, o trecho original e a classe.
+type Mark struct {
+	Start, End int // posição em bytes: text[Start:End] == Raw
+	Raw        string
+	Class      string
+}
+
+// Marks acha as marcas de um texto, na ordem em que aparecem. É a mesma busca
+// que MaskKind sempre fez (kind "" = arquivo de idioma); só acrescenta a classe.
+func Marks(text, kind string) []Mark {
+	locs := reFor(kind).FindAllStringIndex(text, -1)
+	out := make([]Mark, 0, len(locs))
+	for _, l := range locs {
+		raw := text[l[0]:l[1]]
+		out = append(out, Mark{Start: l[0], End: l[1], Raw: raw, Class: classify(raw)})
+	}
+	return out
+}
+
+// classify põe uma marca já reconhecida numa classe. Só olha o próprio trecho.
+// Das macros do Patchouli, só $(br) e $(br2) têm classe própria; as demais
+// ($(l:...), $(/l), $()) ficam como macro, porque não conferi o que cada uma
+// faz na documentação do Patchouli.
+func classify(raw string) string {
+	switch {
+	case strings.HasPrefix(raw, "$("):
+		if raw == "$(br)" || raw == "$(br2)" {
+			return ClassBreak
+		}
+		return ClassMacro
+	case strings.HasPrefix(raw, "%"):
+		return ClassPlaceholder
+	case strings.HasPrefix(raw, "§"), strings.HasPrefix(raw, "&"):
+		if strings.HasSuffix(raw, "r") || strings.HasSuffix(raw, "R") {
+			if !strings.Contains(raw, "#") {
+				return ClassReset
+			}
+		}
+		return ClassStyle
+	case strings.HasPrefix(raw, "</"):
+		return ClassTagClose
+	case strings.HasPrefix(raw, "<"):
+		if strings.HasSuffix(raw, "/>") {
+			return ClassTagVoid
+		}
+		return ClassTagOpen
+	case strings.HasPrefix(raw, "{@"):
+		return ClassBreak
+	case strings.HasPrefix(raw, "{"):
+		if strings.Contains(raw, ":") {
+			return ClassCommand
+		}
+		return ClassPlaceholder
+	case strings.HasPrefix(raw, "http"):
+		return ClassURL
+	case raw == `\n`, strings.HasPrefix(raw, "\n"), strings.HasPrefix(raw, "\r"):
+		return ClassBreak
+	}
+	return ClassMacro
+}
+
 // MaskKind é Mask com as marcas extras da fonte (kind "" = arquivo de idioma).
 func MaskKind(text, style, kind string) (string, []schema.Token) {
-	locs := reFor(kind).FindAllStringIndex(text, -1)
-	if len(locs) == 0 {
+	marks := Marks(text, kind)
+	if len(marks) == 0 {
 		return text, nil
 	}
 	var b strings.Builder
 	var toks []schema.Token
 	last := 0
-	for i, l := range locs {
-		b.WriteString(text[last:l[0]])
-		m := marker(style, i+1)
-		b.WriteString(m)
-		toks = append(toks, schema.Token{T: m, Raw: text[l[0]:l[1]]})
-		last = l[1]
+	for i, m := range marks {
+		b.WriteString(text[last:m.Start])
+		t := marker(style, i+1)
+		b.WriteString(t)
+		toks = append(toks, schema.Token{T: t, Raw: m.Raw, Class: m.Class})
+		last = m.End
 	}
 	b.WriteString(text[last:])
 	return b.String(), toks
